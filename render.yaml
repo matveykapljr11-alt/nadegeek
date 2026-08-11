@@ -1,0 +1,20 @@
+# Lineups — деплой на Render.
+services:
+  - type: web
+    name: lineups
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: node lineups-server.js
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN          # токен бота из @BotFather (строгая проверка initData)
+        sync: false
+      - key: BOT_USERNAME       # username бота без @ (для ссылок «поделиться»)
+        sync: false
+      - key: APP_NAME           # short name Mini App из BotFather /newapp (для t.me/<bot>/<app>)
+        sync: false
+      - key: AUTO_APPROVE       # "1" — предложенные раскидки публикуются сразу; "0" — модерация
+        value: "1"
+# ВНИМАНИЕ: на плане free нет постоянного диска — lineups-data.json (сейвы/просмотры/community)
+# сбрасывается при передеплое и засыпании инстанса. Для прод — Render Disk или внешняя БД.

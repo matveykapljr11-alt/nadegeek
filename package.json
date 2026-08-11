@@ -1,0 +1,12 @@
+{
+  "name": "lineups-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend for the Lineups Telegram Mini App — grenade utility lineups (initData auth, saves/visited sync, community submissions, startapp deep-links)",
+  "main": "lineups-server.js",
+  "scripts": {
+    "start": "node lineups-server.js",
+    "setup": "node lineups-setup.js"
+  },
+  "engines": { "node": ">=18" }
+}

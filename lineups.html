@@ -464,6 +464,8 @@ function render(){
 }
 let ADMIN_STATS=null, ADMIN_LOADING=false;
 function fetchStats(){ ADMIN_LOADING=true; api('/api/stats').then(d=>{ ADMIN_STATS=d; ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }).catch(()=>{ ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }); }
+window.promoteAdmin=function(id,name){ id=(''+id).replace(/\D/g,''); if(!id){ toast('Введите Telegram id'); return; } api('/api/admins',{action:'add',id,name:name||''}).then(()=>{ haptic('success'); toast('Назначен админом'); ADMIN_STATS=null; renderAdmin(); }).catch(e=>toast(e===400?'Это владелец':'Не удалось')); };
+window.demoteAdmin=function(id){ api('/api/admins',{action:'remove',id}).then(()=>{ haptic('soft'); toast('Убран из админов'); ADMIN_STATS=null; renderAdmin(); }).catch(()=>toast('Не удалось')); };
 function renderAdmin(){
   statusColor('var(--muted)');
   if(!ADMIN_STATS && !ADMIN_LOADING) fetchStats();
@@ -476,10 +478,21 @@ function renderAdmin(){
     const mapRows=Object.keys(MAPS).map(id=>{ const n=(s.byMap&&s.byMap[id])||0; return `<div style="display:flex;align-items:center;gap:10px;margin-top:9px"><span style="width:76px;font:600 11px/1 var(--font);color:#C3C9CE">${MAPS[id].name}</span><span style="flex:1;height:8px;border-radius:4px;background:#16191B;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(n/maxMap*100)}%;background:var(--accent)"></span></span><span style="width:26px;text-align:right;font:600 10px/1 var(--mono);color:var(--muted2)">${n}</span></div>`; }).join('');
     const recent=(s.recent||[]).map(r=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line2)"><span class="tag ${r.type==='flash'?'flash':'smoke'}">${(r.type||'').toUpperCase()}</span><div style="flex:1;min-width:0"><div style="font:600 12.5px/1.2 var(--font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title)}</div><div style="font:600 8.5px/1 var(--mono);color:var(--dim);letter-spacing:.06em;margin-top:5px">${MAPS[r.map]?MAPS[r.map].name:esc(r.map)} · ${esc(r.author||'')}${r.video?' · ВИДЕО':''}</div></div></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:12px 0">Пока нет раскидок.</p>';
     const authors=(s.topAuthors||[]).map(a=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="font:600 12px/1 var(--font);color:#D6DADD">${esc(a.name)}</span><span style="font:600 11px/1 var(--mono);color:var(--accent2)">${a.n}</span></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:8px 0">—</p>';
+    const adminSet=new Set((s.admins||[]).map(a=>String(a.id)));
+    const adminsHtml=(s.admins||[]).map(a=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="flex:1;min-width:0;font:600 12px/1 var(--font);color:#D6DADD;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.name||('id '+a.id))}</span>${a.env?'<span class="tag smoke">ВЛАДЕЛЕЦ</span>':`<button class="press" onclick="demoteAdmin('${a.id}')" style="font:600 9px/1 var(--mono);color:#e0776a;letter-spacing:.06em">УБРАТЬ</button>`}</div>`).join('');
+    const peopleHtml=(s.people||[]).filter(pp=>!adminSet.has(String(pp.id))).map(pp=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="flex:1;min-width:0;font:600 12px/1.2 var(--font);color:#C3C9CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pp.name||('id '+pp.id))}</span><button class="press" onclick="promoteAdmin('${pp.id}','${esc(String(pp.name||'').replace(/['\\"]/g,''))}')" style="padding:6px 10px;border-radius:8px;background:#16191B;border:1px solid var(--line);font:600 9px/1 var(--mono);color:var(--accent2);letter-spacing:.06em">+ АДМИН</button></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:8px 0">Пока никто не заходил.</p>';
     body=`
       <div class="stat3">${tile(s.users,'ПОЛЬЗОВАТЕЛЕЙ')}${tile(s.active24h,'АКТИВНЫ 24Ч')}${tile(s.opens,'ОТКРЫТИЙ')}</div>
       <div class="stat3" style="margin-top:10px">${tile(s.lineups,'РАСКИДОК')}${tile(s.withVideo,'С ВИДЕО')}${tile(s.saves,'СОХРАНЕНИЙ')}</div>
       <div class="stat3" style="margin-top:10px">${tile(s.active7d,'АКТИВНЫ 7Д')}${tile(s.studied,'ИЗУЧЕНО')}${tile(s.pending,'НА МОДЕРАЦИИ')}</div>
+      <div class="eyebrow" style="margin-top:24px">АДМИНЫ</div>
+      <div style="margin-top:6px">${adminsHtml}</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <input id="admIdInput" placeholder="Telegram id" inputmode="numeric" style="flex:1;min-width:0;background:#16191B;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;color:var(--text);font:600 12px/1 var(--mono);outline:none">
+        <button class="press" onclick="promoteAdmin((document.getElementById('admIdInput')||{}).value||'','')" style="padding:0 14px;border-radius:10px;background:var(--surface2);border:1px solid rgba(255,255,255,.12);font:600 10px/1 var(--font);color:var(--text)">Добавить</button>
+      </div>
+      <div class="eyebrow" style="margin-top:20px">КТО ЗАХОДИЛ · НАЗНАЧИТЬ</div>
+      <div style="margin-top:6px">${peopleHtml}</div>
       <div class="eyebrow" style="margin-top:24px">РАСКИДКИ ПО КАРТАМ</div>
       <div style="margin-top:8px">${mapRows}</div>
       <div class="eyebrow" style="margin-top:24px">ТОП АВТОРОВ</div>

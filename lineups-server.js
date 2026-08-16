@@ -129,7 +129,14 @@ function authName(u) {
   if (u.username) return '@' + u.username;
   return (u.first_name || 'Игрок');
 }
-function isAdmin(u) { if (!u) return false; if (!ADMIN_IDS.length) return true; return ADMIN_IDS.includes(String(u.id)); }
+function isAdmin(u) {
+  if (!u) return false;
+  const id = String(u.id);
+  if (ADMIN_IDS.includes(id)) return true;                       // владельцы из env (несменяемы)
+  if ((db.admins || []).some(a => String(a.id) === id)) return true; // назначенные из приложения
+  if (!ADMIN_IDS.length && !(db.admins || []).length) return true;   // никто не задан → все (MVP)
+  return false;
+}
 
 /* ----------------------------------------------------- helpers */
 function json(res, code, obj) {
@@ -345,8 +352,28 @@ const server = http.createServer(async (req, res) => {
       mapBg: Object.keys(db.maps || {}),
       byMap, byType,
       topAuthors: Object.entries(authors).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, n]) => ({ name, n })),
-      recent: subs.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(s => ({ title: s.lineup.title, map: s.lineup.map, type: s.lineup.type, author: s.authorName, video: !!s.lineup.video, at: s.createdAt }))
+      recent: subs.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(s => ({ title: s.lineup.title, map: s.lineup.map, type: s.lineup.type, author: s.authorName, video: !!s.lineup.video, at: s.createdAt })),
+      admins: ADMIN_IDS.map(id => ({ id, name: 'владелец', env: true })).concat((db.admins || []).map(a => ({ id: String(a.id), name: a.name || ('id ' + a.id), env: false }))),
+      people: Object.entries(db.users).map(([id, u]) => ({ id, name: u.name || ('id ' + id), seen: u.seen || 0 })).sort((a, b) => b.seen - a.seen).slice(0, 40)
     });
+    return;
+  }
+
+  // ---- назначение/снятие админов (админ) ----
+  if (p === '/api/admins' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!isAdmin(user)) { json(res, 403, { error: 'not admin' }); return; }
+    let b; try { b = JSON.parse(await readBody(req)); } catch (e) { b = null; }
+    const id = String((b && b.id) || '').replace(/\D/g, '');
+    if (!id) { json(res, 400, { error: 'bad id' }); return; }
+    if (ADMIN_IDS.includes(id)) { json(res, 400, { error: 'owner (env) — нельзя менять' }); return; }
+    if (!db.admins) db.admins = [];
+    if (b.action === 'add') { if (!db.admins.some(a => String(a.id) === id)) db.admins.push({ id, name: String(b.name || '').slice(0, 40), by: user ? user.id : 0, at: Date.now() }); }
+    else if (b.action === 'remove') { db.admins = db.admins.filter(a => String(a.id) !== id); }
+    else { json(res, 400, { error: 'bad action' }); return; }
+    persist();
+    json(res, 200, { ok: true, admins: db.admins });
     return;
   }
 
@@ -478,6 +505,7 @@ const server = http.createServer(async (req, res) => {
 
 loadDb().then(() => {
   if (!db.maps) db.maps = {};
+  if (!db.admins) db.admins = [];
   server.listen(PORT, () => {
     console.log(`Lineups server on :${PORT}`);
     console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);

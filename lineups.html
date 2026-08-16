@@ -259,7 +259,7 @@ function api(pathname, body){
     .then(r=>r.ok?r.json():Promise.reject(r.status));
 }
 let createVideo=null; // выбранный файл видео в create-флоу
-let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='';
+let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='', createDur='0:06';
 let MAP_IMG={}, IS_ADMIN=false; // фоны карт (URL) + флаг владельца
 function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
 function uploadVideo(file){
@@ -466,6 +466,7 @@ let ADMIN_STATS=null, ADMIN_LOADING=false;
 function fetchStats(){ ADMIN_LOADING=true; api('/api/stats').then(d=>{ ADMIN_STATS=d; ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }).catch(()=>{ ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }); }
 window.promoteAdmin=function(id,name){ id=(''+id).replace(/\D/g,''); if(!id){ toast('Введите Telegram id'); return; } api('/api/admins',{action:'add',id,name:name||''}).then(()=>{ haptic('success'); toast('Назначен админом'); ADMIN_STATS=null; renderAdmin(); }).catch(e=>toast(e===400?'Это владелец':'Не удалось')); };
 window.demoteAdmin=function(id){ api('/api/admins',{action:'remove',id}).then(()=>{ haptic('soft'); toast('Убран из админов'); ADMIN_STATS=null; renderAdmin(); }).catch(()=>toast('Не удалось')); };
+window.moderate=function(id,action){ api('/api/moderate',{id,action}).then(()=>{ haptic(action==='approve'?'success':'soft'); toast(action==='approve'?'Опубликовано':'Отклонено'); ADMIN_STATS=null; renderAdmin(); }).catch(()=>toast('Не удалось')); };
 function renderAdmin(){
   statusColor('var(--muted)');
   if(!ADMIN_STATS && !ADMIN_LOADING) fetchStats();
@@ -481,10 +482,21 @@ function renderAdmin(){
     const adminSet=new Set((s.admins||[]).map(a=>String(a.id)));
     const adminsHtml=(s.admins||[]).map(a=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="flex:1;min-width:0;font:600 12px/1 var(--font);color:#D6DADD;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.name||('id '+a.id))}</span>${a.env?'<span class="tag smoke">ВЛАДЕЛЕЦ</span>':`<button class="press" onclick="demoteAdmin('${a.id}')" style="font:600 9px/1 var(--mono);color:#e0776a;letter-spacing:.06em">УБРАТЬ</button>`}</div>`).join('');
     const peopleHtml=(s.people||[]).filter(pp=>!adminSet.has(String(pp.id))).map(pp=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="flex:1;min-width:0;font:600 12px/1.2 var(--font);color:#C3C9CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pp.name||('id '+pp.id))}</span><button class="press" onclick="promoteAdmin('${pp.id}','${esc(String(pp.name||'').replace(/['\\"]/g,''))}')" style="padding:6px 10px;border-radius:8px;background:#16191B;border:1px solid var(--line);font:600 9px/1 var(--mono);color:var(--accent2);letter-spacing:.06em">+ АДМИН</button></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:8px 0">Пока никто не заходил.</p>';
+    const queueHtml=(s.queue||[]).map(q=>`<div style="border:1px solid var(--line);border-radius:14px;padding:11px;margin-top:10px;background:var(--surface)">
+      <div style="display:flex;gap:11px">
+        <div style="width:58px;height:74px;border-radius:9px;overflow:hidden;background:#000;flex:none;display:flex;align-items:center;justify-content:center">${q.video?`<video src="${(CFG.apiBase||'')}/api/video?id=${q.id}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:'<span style="font:600 7.5px/1 var(--mono);color:#4A5157">НЕТ ВИДЕО</span>'}</div>
+        <div style="flex:1;min-width:0"><div style="font:700 13px/1.2 var(--font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(q.title)}</div><div style="display:flex;gap:5px;margin-top:7px;flex-wrap:wrap"><span class="tag ${q.type==='flash'?'flash':'smoke'}">${(q.type||'').toUpperCase()}</span><span class="tag neutral">${MAPS[q.map]?MAPS[q.map].name:esc(q.map)}</span></div><div style="font:600 8.5px/1 var(--mono);color:var(--dim);letter-spacing:.06em;margin-top:7px">${esc(q.from||'')} → ${esc(q.to||'')} · ${esc(q.author||'')}</div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-accent press" style="height:38px" onclick="moderate('${q.id}','approve')">Одобрить</button>
+        <button class="press" onclick="moderate('${q.id}','reject')" style="flex:none;padding:0 16px;height:38px;border-radius:12px;background:#16191B;border:1px solid var(--line);font:600 12px/1 var(--font);color:#e0776a">Отклонить</button>
+      </div>
+    </div>`).join('');
     body=`
       <div class="stat3">${tile(s.users,'ПОЛЬЗОВАТЕЛЕЙ')}${tile(s.active24h,'АКТИВНЫ 24Ч')}${tile(s.opens,'ОТКРЫТИЙ')}</div>
       <div class="stat3" style="margin-top:10px">${tile(s.lineups,'РАСКИДОК')}${tile(s.withVideo,'С ВИДЕО')}${tile(s.saves,'СОХРАНЕНИЙ')}</div>
       <div class="stat3" style="margin-top:10px">${tile(s.active7d,'АКТИВНЫ 7Д')}${tile(s.studied,'ИЗУЧЕНО')}${tile(s.pending,'НА МОДЕРАЦИИ')}</div>
+      ${(s.queue&&s.queue.length)?`<div class="eyebrow" style="margin-top:24px">НА МОДЕРАЦИИ · ${s.queue.length}</div>${queueHtml}`:''}
       <div class="eyebrow" style="margin-top:24px">АДМИНЫ</div>
       <div style="margin-top:6px">${adminsHtml}</div>
       <div style="display:flex;gap:8px;margin-top:12px">
@@ -989,7 +1001,7 @@ function renderProfile(){
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
         <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div>${!SERVER_OK?`<div style="font:600 8px/1.4 var(--mono);color:#5E656B;letter-spacing:.04em;margin-top:5px">initData:${(TG&&TG.initData)?'есть('+TG.initData.length+')':'НЕТ'} · cfg:${CFG.enabled?'on':'off'} · ${esc(SYNC_ERR||'—')}</div><button class="press" onclick="authDbg()" style="margin-top:8px;padding:8px 12px;border-radius:9px;background:#16191B;border:1px solid var(--line);font:600 9.5px/1 var(--mono);color:#C3C9CE;letter-spacing:.06em">ПРОВЕРИТЬ СВЯЗЬ</button>`:''}</div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
       ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · АКТИВНОСТЬ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
@@ -1020,7 +1032,6 @@ function renderProfile(){
 }
 window.openTgChannel=function(){ haptic('soft'); if(TG&&TG.openTelegramLink){try{TG.openTelegramLink('https://t.me/lineups');return;}catch(e){}} toast('Открываем @lineups'); };
 window.toggleAutoplay=function(el){ PREFS.autoplay=!(PREFS.autoplay!==false); el.classList.toggle('on',PREFS.autoplay); savePrefs(); haptic('sel'); };
-window.authDbg=function(){ fetch((CFG.apiBase||'')+'/api/authdbg',{method:'POST',headers:{'X-Init-Data':(TG&&TG.initData)||''}}).then(r=>r.json()).then(d=>{ const msg='keys:['+(d.keys||[]).join(',')+']\nsig:'+d.hasSignature+' token:'+d.botTokenSet+'\nmatchNoSig:'+d.matchNoSig+' matchWithSig:'+d.matchWithSig+'\nage:'+d.authDateAgeSec+'s'; if(TG&&TG.showAlert)TG.showAlert(msg); else alert(msg); }).catch(e=>{ const m='ошибка: '+e; if(TG&&TG.showAlert)TG.showAlert(m); else alert(m); }); };
 
 /* ===== AUTHOR ===== */
 function renderAuthor(){
@@ -1127,8 +1138,12 @@ function renderCreate(){
       <div style="display:flex;gap:8px;margin-top:10px" id="cSide">${['АТАКА','ЗАЩИТА'].map((t,i)=>`<button class="chip ${i===0?'on':''} press" onclick="pickOne('cSide',this)">${t}</button>`).join('')}</div>
       <div class="eyebrow" style="margin-top:18px">СЛОЖНОСТЬ</div>
       <div style="display:flex;gap:8px;margin-top:10px" id="cDiff">${['EASY','ADV'].map((t,i)=>`<button class="chip ${i===1?'on':''} press" onclick="pickOne('cDiff',this)">${t}</button>`).join('')}</div>
-      <div class="eyebrow" style="margin-top:18px">ТИП БРОСКА · РАСПОЗНАН ПО ВИДЕО</div>
-      <div style="margin-top:10px;display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:11px;background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.2)"><span style="font:700 12px/1 var(--font);color:var(--accent2)">Jump throw</span></div>
+      <div class="eyebrow" style="margin-top:18px">ТИП БРОСКА</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="cThrow">${['Stand','Jump','Run','Jump throw'].map((t,i)=>`<button class="chip ${i===1?'on':''} press" onclick="pickOne('cThrow',this)">${t}</button>`).join('')}</div>
+      <div class="eyebrow" style="margin-top:18px">ЗОНА</div>
+      <div style="display:flex;gap:8px;margin-top:10px" id="cZone">${['A','Mid','B','Long'].map((z,i)=>`<button class="chip ${i===0?'on':''} press" onclick="pickOne('cZone',this)">${z}</button>`).join('')}</div>
+      <div class="eyebrow" style="margin-top:18px">ДЛИТЕЛЬНОСТЬ${createVideo?' · ИЗ ВИДЕО':''}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="cDur">${[createDur,'0:03','0:04','0:05','0:06','0:07','0:08','0:10'].filter((d,i,a)=>a.indexOf(d)===i).map(d=>`<button class="chip ${d===createDur?'on':''} press" onclick="pickOne('cDur',this)">${d}</button>`).join('')}</div>
       <div class="eyebrow" style="margin-top:18px">ОПИСАНИЕ · 1 ПРЕДЛОЖЕНИЕ</div>
       <textarea id="cDesc" rows="2" oninput="this.nextElementSibling.textContent=this.value.length+' / 90'" style="width:100%;margin-top:10px;background:#16191B;border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--text);font:500 13px/1.4 var(--font);outline:none;resize:none">Прицел в правый край антенны, прыжок и бросок одновременно.</textarea>
       <div style="font:600 9px/1 var(--mono);color:var(--dim);text-align:right;margin-top:6px">58 / 90</div>
@@ -1140,10 +1155,12 @@ function renderCreate(){
   }
   stage.innerHTML=`<div class="view active">${inner}</div>`;
 }
-window.startCreate=function(){ createVideo=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; go('create',{createStep:0}); };
+window.startCreate=function(){ createVideo=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; createDur='0:06'; go('create',{createStep:0}); };
 window.setCreateMap=function(id){ if(createMap!==id){ createMap=id; createFrom=null; createTo=null; createPlacing='from'; } renderCreate(); haptic('sel'); };
 window.mapTap=function(e){ const el=document.getElementById('createMap'); if(!el)return; const r=el.getBoundingClientRect(); const px=(e.touches?e.touches[0].clientX:e.clientX), py=(e.touches?e.touches[0].clientY:e.clientY); const x=Math.max(8,Math.min(504,(px-r.left)/r.width*512)); const y=Math.max(8,Math.min(504,(py-r.top)/r.height*512)); if(createPlacing==='from'){ createFrom={x,y}; createPlacing='to'; } else { createTo={x,y}; } haptic('sel'); renderCreate(); };
-window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>32*1024*1024){ toast('Видео больше 32 МБ'); input.value=''; return; } createVideo=f; haptic('sel'); renderCreate(); };
+window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>32*1024*1024){ toast('Видео больше 32 МБ'); input.value=''; return; } createVideo=f; haptic('sel');
+  try{ const uu=URL.createObjectURL(f); const v=document.createElement('video'); v.preload='metadata'; v.onloadedmetadata=function(){ if(v.duration&&isFinite(v.duration)){ const s=Math.min(99*60,Math.round(v.duration)); createDur=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); if(state.view==='create'&&state.createStep===2)renderCreate(); } URL.revokeObjectURL(uu); }; v.src=uu; }catch(e){}
+  renderCreate(); };
 window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('author'); };
 window.createNext=function(){ state.createStep++; renderCreate(); haptic('sel'); };
 window.pickOne=function(grp,el){ document.getElementById(grp).querySelectorAll('.chip').forEach(c=>{c.classList.remove('acc-on','on'); c.classList.add('chip');}); const acc=grp==='cType'; el.classList.add(acc?'acc-on':'on'); haptic('sel'); };
@@ -1154,12 +1171,15 @@ window.publishLineup=function(){
   const side=selChip('cSide')==='ЗАЩИТА'?'defense':'attack';
   const diff=selChip('cDiff')==='ADV'?'advanced':'easy';
   const dd=((document.getElementById('cDesc')||{}).value||'').trim();
+  const thr=selChip('cThrow')||'Jump';
+  const zone=['A','Mid','B','Long'].includes(selChip('cZone'))?selChip('cZone'):'A';
+  const dur=/^\d:\d\d$/.test(selChip('cDur'))?selChip('cDur'):(createDur||'0:06');
   const fromP={x:createFrom?createFrom.x:300,y:createFrom?createFrom.y:470,n:(createFromN.trim()||'Откуда')};
   const toP={x:createTo?createTo.x:120,y:createTo?createTo.y:140,n:(createToN.trim()||'Куда')};
   const proceed=(videoId,videoUrl)=>{
-    const payload={map:createMap,side,type,zone:'A',title:name,from:fromP,to:toP,thr:'Jump throw',dur:'0:06',diff,desc:dd,aim:toP.n,video:videoId||''};
+    const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||''};
     const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
-    const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,'A',name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,'Jump throw','0:06',diff,0); nl.desc=dd; nl.aim=toP.n; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
+    const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
   };

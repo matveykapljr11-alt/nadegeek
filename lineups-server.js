@@ -48,7 +48,9 @@ const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const BOT_USERNAME = process.env.BOT_USERNAME || '';
 const APP_NAME = process.env.APP_NAME || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
-const AUTO_APPROVE = process.env.AUTO_APPROVE !== '0';
+// По умолчанию — модерация: чужие раскидки попадают в очередь, админы публикуются сразу.
+// AUTO_APPROVE=1 — публиковать всех без модерации.
+const AUTO_APPROVE = process.env.AUTO_APPROVE === '1';
 // Куда бот кладёт видео (приватный канал/группа с ботом-админом). Если пусто —
 // видео отправляется в чат самого загрузившего (нужно чтобы он нажал Start у бота).
 const STORAGE_CHAT_ID = process.env.STORAGE_CHAT_ID || '';
@@ -285,30 +287,6 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { json(res, 204, {}); return; }
   if (p === '/health') { json(res, 200, { ok: true, users: Object.keys(db.users).length, subs: Object.keys(db.subs).length, kv: KV_ON }); return; }
-
-  // временная диагностика авторизации (секреты не раскрываются)
-  if (p === '/api/authdbg' && req.method === 'POST') {
-    const initData = req.headers['x-init-data'] || '';
-    const out = { present: !!initData, botTokenSet: !!BOT_TOKEN };
-    try {
-      const params = new URLSearchParams(initData);
-      const hash = params.get('hash') || '';
-      out.keys = [...params.keys()];
-      out.hasSignature = params.has('signature');
-      out.givenHash6 = hash.slice(0, 6);
-      const ad = parseInt(params.get('auth_date') || '0', 10);
-      out.authDateAgeSec = ad ? Math.round(Date.now() / 1000 - ad) : null;
-      if (BOT_TOKEN && hash) {
-        const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-        const build = (exclSig) => { const pp = new URLSearchParams(initData); pp.delete('hash'); if (exclSig) pp.delete('signature'); return [...pp.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n'); };
-        const cNo = crypto.createHmac('sha256', secret).update(build(true)).digest('hex');
-        const cWith = crypto.createHmac('sha256', secret).update(build(false)).digest('hex');
-        out.matchNoSig = cNo === hash; out.matchWithSig = cWith === hash;
-      }
-    } catch (e) { out.error = String(e.message || e); }
-    json(res, 200, out);
-    return;
-  }
   if (req.method === 'GET' && (p === '/' || p === '/index.html' || p === '/lineups.html')) { serveHtml(res); return; }
 
   // ---- вход + синхронизация ----
@@ -354,7 +332,8 @@ const server = http.createServer(async (req, res) => {
       topAuthors: Object.entries(authors).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, n]) => ({ name, n })),
       recent: subs.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(s => ({ title: s.lineup.title, map: s.lineup.map, type: s.lineup.type, author: s.authorName, video: !!s.lineup.video, at: s.createdAt })),
       admins: ADMIN_IDS.map(id => ({ id, name: 'владелец', env: true })).concat((db.admins || []).map(a => ({ id: String(a.id), name: a.name || ('id ' + a.id), env: false }))),
-      people: Object.entries(db.users).map(([id, u]) => ({ id, name: u.name || ('id ' + id), seen: u.seen || 0 })).sort((a, b) => b.seen - a.seen).slice(0, 40)
+      people: Object.entries(db.users).map(([id, u]) => ({ id, name: u.name || ('id ' + id), seen: u.seen || 0 })).sort((a, b) => b.seen - a.seen).slice(0, 40),
+      queue: subs.filter(s => s.status !== 'approved').sort((a, b) => b.createdAt - a.createdAt).map(s => ({ id: s.id, title: s.lineup.title, map: s.lineup.map, type: s.lineup.type, author: s.authorName, video: !!s.lineup.video, from: s.lineup.from.n, to: s.lineup.to.n }))
     });
     return;
   }
@@ -374,6 +353,22 @@ const server = http.createServer(async (req, res) => {
     else { json(res, 400, { error: 'bad action' }); return; }
     persist();
     json(res, 200, { ok: true, admins: db.admins });
+    return;
+  }
+
+  // ---- модерация раскидок (админ) ----
+  if (p === '/api/moderate' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!isAdmin(user)) { json(res, 403, { error: 'not admin' }); return; }
+    let b; try { b = JSON.parse(await readBody(req)); } catch (e) { b = null; }
+    const rec = b && db.subs[b.id];
+    if (!rec) { json(res, 404, { error: 'not found' }); return; }
+    if (b.action === 'approve') rec.status = 'approved';
+    else if (b.action === 'reject') delete db.subs[b.id];
+    else { json(res, 400, { error: 'bad action' }); return; }
+    persist();
+    json(res, 200, { ok: true });
     return;
   }
 
@@ -414,7 +409,7 @@ const server = http.createServer(async (req, res) => {
       id, lineup,
       ownerId: user ? user.id : 0,
       authorName: authName(user),
-      status: AUTO_APPROVE ? 'approved' : 'pending',
+      status: (AUTO_APPROVE || isAdmin(user)) ? 'approved' : 'pending',
       createdAt: Date.now()
     };
     db.subs[id] = rec;
@@ -510,7 +505,7 @@ loadDb().then(() => {
     console.log(`Lineups server on :${PORT}`);
     console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
     console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
-    console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация' : 'модерация (pending)'}`);
+    console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация всех' : 'модерация (админы — сразу, остальные в очередь)'}`);
     console.log(`  video: ${BOT_TOKEN ? ('Telegram, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено (нет BOT_TOKEN)'}`);
     console.log(`  storage: ${KV_ON ? 'Upstash KV (постоянно)' : 'локальный JSON (ЭФЕМЕРНО на Render free — данные сбрасываются)'}`);
     if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);

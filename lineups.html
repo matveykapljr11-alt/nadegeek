@@ -288,54 +288,52 @@ const IC = {
 function nav(name,fill){ return `<svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke-width="1.5">${IC[name]}</svg>`; }
 
 /* ---------- Data ---------- */
-// Synthetic top-down tactical radars (viewBox 0 0 512 512)
+// Оригинальные top-down схемы карт Standoff 2 (viewBox 0 0 512 512).
+// Не игровые ассеты — авторская графика под реальную геометрию: сайты A/B, mid, спавны.
+const MAPDEF = {
+  sandstone:{bg:'#141210',f:'#241F18',f2:'#2b2419',c:'#181410',
+    L:['M135 175v185','M255 355v-165','M375 175v50','M205 120h95','M170 415h210','M120 300v60'],
+    R:[[58,58,152,118,8],[300,54,158,120,8],[68,200,120,96,6,1],[328,210,132,112,6,1],[205,188,110,165,6],[108,360,300,102,8]]},
+  province:{bg:'#131512',f:'#22271b',f2:'#2a3120',c:'#151812',
+    L:['M256 186v-42','M256 326v42','M135 210v100','M400 210v100','M200 145h60','M240 366h60'],
+    R:[[64,78,134,132,8],[326,80,134,132,8],[86,320,140,120,8,1],[300,320,136,120,8,1]],
+    C:[[256,256,72,1]]},
+  rust:{bg:'#15110e',f:'#2a2018',f2:'#33271b',c:'#1a130d',
+    L:['M256 150v70','M200 300h112','M160 200v150','M360 180v160','M120 256h90'],
+    R:[[118,88,92,60,4],[300,98,82,60,4,1],[108,360,92,60,4],[318,360,92,60,4,1],[228,148,60,40,4],[300,298,72,52,4]],
+    C:[[256,256,58,1]]},
+  zone9:{bg:'#101315',f:'#1c2429',f2:'#243038',c:'#12181c',
+    L:['M256 88v340','M118 256h278','M182 160h150','M182 356h150'],
+    R:[[68,68,152,152,4],[300,68,140,152,4,1],[68,300,152,140,4,1],[300,300,140,140,4],[208,208,96,96,4]]},
+  sakura:{bg:'#171012',f:'#2a1c22',f2:'#35232b',c:'#1b1216',
+    L:['M256 204v-74','M256 308v94','M150 256h94','M318 256h92'],
+    R:[[78,88,122,112,10],[318,98,124,102,10,1],[98,318,132,112,10,1],[308,318,124,112,10],[68,220,82,82,10]],
+    C:[[256,256,52,1]]},
+  dune:{bg:'#161209',f:'#2b2412',f2:'#352d17',c:'#1a1509',
+    L:['M256 128v92','M178 320h164','M128 200v132','M384 200v132'],
+    R:[[68,78,164,112,22],[318,118,132,152,22,1],[88,298,152,132,22],[298,318,152,122,22,1]]},
+  village:{bg:'#131310',f:'#242219',f2:'#2d2a1f',c:'#181712',
+    L:['M256 58v404','M118 200h132','M262 320h132','M118 360h120'],
+    R:[[78,78,92,80,4],[200,88,82,70,4,1],[330,88,92,80,4],[88,238,82,80,4,1],[338,248,82,80,4],[78,358,92,80,4],[210,348,82,80,4,1],[330,358,92,80,4]]}
+};
 function radar(kind){
-  const S = 'fill:#241F18;stroke:rgba(255,255,255,.05);stroke-width:2';
-  const P = 'fill:#2b2419;stroke:rgba(255,255,255,.045);stroke-width:2';
-  const path='#181410';
-  if(kind==='sandstone') return `
-   <rect width="512" height="512" fill="#131110"/>
-   <g style="${S}">
-     <rect x="60" y="70" width="150" height="120" rx="6"/>
-     <rect x="70" y="210" width="120" height="90" rx="6"/>
-     <rect x="300" y="60" width="150" height="130" rx="6"/>
-     <rect x="330" y="230" width="130" height="120" rx="6"/>
-     <rect x="200" y="200" width="110" height="150" rx="6"/>
-     <rect x="120" y="360" width="270" height="110" rx="6"/>
-   </g>
-   <g stroke="${path}" stroke-width="30" fill="none" stroke-linecap="round">
-     <path d="M135 190v170"/><path d="M255 350v-150"/><path d="M375 190v40"/>
-     <path d="M210 130h90"/><path d="M190 415h200"/><path d="M130 300v60"/>
-   </g>`;
-  if(kind==='province') return `
-   <rect width="512" height="512" fill="#131110"/>
-   <g style="${P}">
-     <rect x="70" y="80" width="130" height="130" rx="8"/>
-     <rect x="330" y="90" width="120" height="120" rx="8"/>
-     <circle cx="256" cy="256" r="70"/>
-     <rect x="90" y="320" width="140" height="120" rx="8"/>
-     <rect x="310" y="320" width="130" height="120" rx="8"/>
-   </g>
-   <g stroke="${path}" stroke-width="28" fill="none" stroke-linecap="round">
-     <path d="M200 145h60M256 186v-40M256 326v40M135 210v110M400 210v110"/>
-   </g>`;
-  return `
-   <rect width="512" height="512" fill="#131110"/>
-   <g style="${S}">
-     <rect x="90" y="70" width="180" height="90" rx="6"/>
-     <rect x="300" y="120" width="130" height="200" rx="6"/>
-     <rect x="70" y="200" width="130" height="180" rx="6"/>
-     <rect x="230" y="360" width="200" height="90" rx="6"/>
-   </g>
-   <g stroke="${path}" stroke-width="26" fill="none" stroke-linecap="round">
-     <path d="M200 160v200M270 115h30M200 300h100"/>
-   </g>`;
+  const m = MAPDEF[kind] || MAPDEF.sandstone;
+  const ln = 'rgba(255,255,255,.05)';
+  const paths = (m.L||[]).map(d=>`<path d="${d}" stroke="${m.c}" stroke-width="30" fill="none" stroke-linecap="round"/>`).join('');
+  const rects = (m.R||[]).map(a=>`<rect x="${a[0]}" y="${a[1]}" width="${a[2]}" height="${a[3]}" rx="${a[4]!=null?a[4]:6}" fill="${a[5]?m.f2:m.f}" stroke="${ln}" stroke-width="2"/>`).join('');
+  const circ = (m.C||[]).map(a=>`<circle cx="${a[0]}" cy="${a[1]}" r="${a[2]}" fill="${a[3]?m.f2:m.f}" stroke="${ln}" stroke-width="2"/>`).join('');
+  return `<rect width="512" height="512" fill="${m.bg}"/><g>${paths}</g>${rects}${circ}`;
 }
 const MAPS = {
   sandstone:{name:'Sandstone',radar:'sandstone'},
   province:{name:'Province',radar:'province'},
-  rust:{name:'Rust',radar:'rust'}
+  rust:{name:'Rust',radar:'rust'},
+  zone9:{name:'Zone 9',radar:'zone9'},
+  sakura:{name:'Sakura',radar:'sakura'},
+  dune:{name:'Dune',radar:'dune'},
+  village:{name:'Village',radar:'village'}
 };
+
 const AUTHORS=['@sandstone.lineups','@province.pro','@rust.nades','@pro.lineups'];
 // side: attack(T) / defense(CT). type: smoke/flash/molotov. from(orange)/to(landing blue) in map-space.
 const L = (id,map,side,type,zone,title,fx,fy,fn,tx,ty,tn,thr,dur,diff,auth)=>({id,map,side,type,zone,title,from:{x:fx,y:fy,n:fn},to:{x:tx,y:ty,n:tn},thr,dur,diff,auth,saved:false});

@@ -16,5 +16,12 @@ services:
         sync: false
       - key: AUTO_APPROVE       # "1" — предложенные раскидки публикуются сразу; "0" — модерация
         value: "1"
-# ВНИМАНИЕ: на плане free нет постоянного диска — lineups-data.json (сейвы/просмотры/community)
-# сбрасывается при передеплое и засыпании инстанса. Для прод — Render Disk или внешняя БД.
+      - key: STORAGE_CHAT_ID    # (опц.) id канала-склада для видео; пусто = чат загрузившего
+        sync: false
+      - key: KV_URL             # Upstash Redis REST URL — постоянное хранилище данных
+        sync: false
+      - key: KV_TOKEN           # Upstash Redis REST token
+        sync: false
+# ПОСТОЯННОЕ ХРАНИЛИЩЕ: задай KV_URL + KV_TOKEN (Upstash Redis, бесплатно) — тогда
+# раскидки/сейвы переживают засыпание и передеплой. Без них данные лежат в
+# lineups-data.json и сбрасываются на Render free (диска нет). Видео всегда в Telegram.

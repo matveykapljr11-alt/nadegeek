@@ -52,6 +52,12 @@ const AUTO_APPROVE = process.env.AUTO_APPROVE !== '0';
 // Куда бот кладёт видео (приватный канал/группа с ботом-админом). Если пусто —
 // видео отправляется в чат самого загрузившего (нужно чтобы он нажал Start у бота).
 const STORAGE_CHAT_ID = process.env.STORAGE_CHAT_ID || '';
+// Постоянное хранилище (Upstash Redis REST). Если задано — данные (раскидки,
+// сейвы, просмотры) переживают засыпание/передеплой. Если нет — локальный JSON
+// (эфемерно на Render free). Поддерживаются и дефолтные имена Upstash.
+const KV_URL = (process.env.KV_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+const KV_TOKEN = process.env.KV_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const KV_ON = !!(KV_URL && KV_TOKEN);
 
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
@@ -60,12 +66,30 @@ const MAX_VIDEO_BYTES = 32 * 1024 * 1024; // 32 МБ (лимит sendVideo у б
 
 /* ----------------------------------------------------- storage */
 let db = { users: {}, subs: {}, seq: 1 };
-try { db = Object.assign(db, JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))); } catch (e) {}
+const KV_KEY = 'lineups_db';
+function kvReq(method, urlPath, body) {
+  return new Promise((resolve, reject) => {
+    let uu; try { uu = new URL(KV_URL + urlPath); } catch (e) { reject(e); return; }
+    const opts = { method, hostname: uu.hostname, port: 443, path: uu.pathname + uu.search, headers: { Authorization: 'Bearer ' + KV_TOKEN } };
+    if (body != null) { opts.headers['Content-Type'] = 'text/plain'; opts.headers['Content-Length'] = Buffer.byteLength(body); }
+    const r = https.request(opts, resp => { let b = ''; resp.on('data', c => b += c); resp.on('end', () => { try { resolve(JSON.parse(b)); } catch (e) { resolve({ result: b }); } }); });
+    r.on('error', reject); if (body != null) r.write(body); r.end();
+  });
+}
+async function loadDb() {
+  if (KV_ON) {
+    try { const j = await kvReq('GET', '/get/' + KV_KEY); if (j && j.result) db = Object.assign(db, JSON.parse(j.result)); }
+    catch (e) { console.error('KV load failed:', e.message); }
+    return;
+  }
+  try { db = Object.assign(db, JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))); } catch (e) {}
+}
 let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fs.writeFile(DATA_FILE, JSON.stringify(db), err => { if (err) console.error('persist', err); });
+    if (KV_ON) kvReq('POST', '/set/' + KV_KEY, JSON.stringify(db)).catch(e => console.error('KV save:', e.message));
+    else fs.writeFile(DATA_FILE, JSON.stringify(db), err => { if (err) console.error('persist', err); });
   }, 300);
 }
 function genId() { return 'u' + (db.seq++).toString(36) + crypto.randomBytes(2).toString('hex'); }
@@ -332,11 +356,14 @@ const server = http.createServer(async (req, res) => {
   json(res, 404, { error: 'not found' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Lineups server on :${PORT}`);
-  console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
-  console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
-  console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация' : 'модерация (pending)'}`);
-  console.log(`  video: ${BOT_TOKEN ? ('Telegram, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено (нет BOT_TOKEN)'}`);
-  if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);
+loadDb().then(() => {
+  server.listen(PORT, () => {
+    console.log(`Lineups server on :${PORT}`);
+    console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
+    console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
+    console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация' : 'модерация (pending)'}`);
+    console.log(`  video: ${BOT_TOKEN ? ('Telegram, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено (нет BOT_TOKEN)'}`);
+    console.log(`  storage: ${KV_ON ? 'Upstash KV (постоянно)' : 'локальный JSON (ЭФЕМЕРНО на Render free — данные сбрасываются)'}`);
+    if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);
+  });
 });

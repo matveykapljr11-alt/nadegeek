@@ -253,7 +253,7 @@ const START_PARAM = (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param) |
 const ME = (TG && TG.initDataUnsafe && TG.initDataUnsafe.user) || null;
 function myHandle(){ return ME ? (ME.username ? '@'+ME.username : (ME.first_name||'Игрок')) : '@you'; }
 function myInitial(){ const h=myHandle().replace('@',''); return (h[0]||'U').toUpperCase(); }
-let SERVER_OK=false, startHandled=false;
+let SERVER_OK=false, startHandled=false, SYNC_ERR='';
 function api(pathname, body){
   const headers={'Content-Type':'application/json'};
   try{ if(TG&&TG.initData) headers['X-Init-Data']=TG.initData; }catch(e){}
@@ -936,7 +936,7 @@ function renderProfile(){
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
         <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div>${!SERVER_OK?`<div style="font:600 8px/1.4 var(--mono);color:#5E656B;letter-spacing:.04em;margin-top:5px">initData:${(TG&&TG.initData)?'есть('+TG.initData.length+')':'НЕТ'} · cfg:${CFG.enabled?'on':'off'} · ${esc(SYNC_ERR||'—')}</div>`:''}</div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
       <div class="prem">
@@ -1171,8 +1171,8 @@ function openStartParam(){
 }
 // синхронизация с сервером (если бэкенд подключён); иначе остаёмся на localStorage
 function syncWithServer(){
-  if(!CFG.enabled){ openStartParam(); return; }
-  api('/api/sync',{}).then(d=>{
+  if(!CFG.enabled){ SYNC_ERR='config-off'; openStartParam(); return; }
+  api('/api/sync',{}).catch(e=>{ SYNC_ERR='sync:'+e; return Promise.reject(e); }).then(d=>{
     if(d){
       if(Array.isArray(d.community)) d.community.forEach(cl=>{ const ex=LINEUPS.find(x=>x.id===cl.id); if(ex)Object.assign(ex,cl); else { if(cl.mine)cl.auth=0; LINEUPS.push(cl); } });
       if(Array.isArray(d.saved)){ const S=new Set(d.saved); LINEUPS.forEach(l=>l.saved=S.has(l.id)); persist(); }

@@ -111,6 +111,7 @@ function verifyInitData(initData) {
   const hash = params.get('hash');
   if (!hash) return null;
   params.delete('hash');
+  params.delete('signature'); // новое поле Telegram (Ed25519) — в hash-проверку не входит
   const dcs = [...params.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n');
   if (!BOT_TOKEN) {
     try { const u = JSON.parse(params.get('user') || 'null'); return u ? { ...u, _unverified: true } : null; }

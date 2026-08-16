@@ -930,12 +930,13 @@ function renderProfile(){
   statusColor('var(--muted)');
   const saved=LINEUPS.filter(l=>l.saved).length;
   const visited=LINEUPS.filter(l=>l.visited).length;
+  const role = !SERVER_OK ? 'ОФЛАЙН' : (IS_ADMIN ? 'ВЛАДЕЛЕЦ' : 'ПОЛЬЗОВАТЕЛЬ');
   stage.innerHTML=`
   <div class="view active">
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
         <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
       <div class="prem">

@@ -27,9 +27,7 @@ img{display:block}
 
 #app{position:fixed;inset:0;max-width:460px;margin:0 auto;background:var(--bg);overflow:hidden;
   box-shadow:0 0 0 1px rgba(255,255,255,.05);display:flex;flex-direction:column}
-.statusbar{height:calc(30px + var(--safe-top));padding:var(--safe-top) 22px 0;display:flex;align-items:center;justify-content:space-between;
-  font:600 11px/30px var(--mono);color:var(--muted);flex:none;letter-spacing:.02em}
-.statusbar .r{letter-spacing:.14em;opacity:.7}
+.statusbar{height:calc(8px + var(--safe-top));padding-top:var(--safe-top);flex:none}
 
 /* view system */
 .view{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg);
@@ -236,7 +234,7 @@ img{display:block}
 </head>
 <body>
 <div id="app">
-  <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ▲</span></div>
+  <div class="statusbar"></div>
   <div id="stage" style="position:relative;flex:1;overflow:hidden"></div>
 </div>
 
@@ -462,10 +460,49 @@ function render(){
   if(v==='author') return renderAuthor();
   if(v==='detail') return renderDetail();
   if(v==='create') return renderCreate();
+  if(v==='admin') return renderAdmin();
+}
+let ADMIN_STATS=null, ADMIN_LOADING=false;
+function fetchStats(){ ADMIN_LOADING=true; api('/api/stats').then(d=>{ ADMIN_STATS=d; ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }).catch(()=>{ ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }); }
+function renderAdmin(){
+  statusColor('var(--muted)');
+  if(!ADMIN_STATS && !ADMIN_LOADING) fetchStats();
+  const s=ADMIN_STATS;
+  const tile=(v,l)=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+  let body;
+  if(!s){ body=`<div class="empty" style="min-height:320px"><div class="spin"></div><p>Загружаем статистику…</p></div>`; }
+  else {
+    const maxMap=Math.max(1,...Object.values(s.byMap||{}).concat([1]));
+    const mapRows=Object.keys(MAPS).map(id=>{ const n=(s.byMap&&s.byMap[id])||0; return `<div style="display:flex;align-items:center;gap:10px;margin-top:9px"><span style="width:76px;font:600 11px/1 var(--font);color:#C3C9CE">${MAPS[id].name}</span><span style="flex:1;height:8px;border-radius:4px;background:#16191B;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(n/maxMap*100)}%;background:var(--accent)"></span></span><span style="width:26px;text-align:right;font:600 10px/1 var(--mono);color:var(--muted2)">${n}</span></div>`; }).join('');
+    const recent=(s.recent||[]).map(r=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line2)"><span class="tag ${r.type==='flash'?'flash':'smoke'}">${(r.type||'').toUpperCase()}</span><div style="flex:1;min-width:0"><div style="font:600 12.5px/1.2 var(--font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title)}</div><div style="font:600 8.5px/1 var(--mono);color:var(--dim);letter-spacing:.06em;margin-top:5px">${MAPS[r.map]?MAPS[r.map].name:esc(r.map)} · ${esc(r.author||'')}${r.video?' · ВИДЕО':''}</div></div></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:12px 0">Пока нет раскидок.</p>';
+    const authors=(s.topAuthors||[]).map(a=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line2)"><span style="font:600 12px/1 var(--font);color:#D6DADD">${esc(a.name)}</span><span style="font:600 11px/1 var(--mono);color:var(--accent2)">${a.n}</span></div>`).join('') || '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:8px 0">—</p>';
+    body=`
+      <div class="stat3">${tile(s.users,'ПОЛЬЗОВАТЕЛЕЙ')}${tile(s.active24h,'АКТИВНЫ 24Ч')}${tile(s.opens,'ОТКРЫТИЙ')}</div>
+      <div class="stat3" style="margin-top:10px">${tile(s.lineups,'РАСКИДОК')}${tile(s.withVideo,'С ВИДЕО')}${tile(s.saves,'СОХРАНЕНИЙ')}</div>
+      <div class="stat3" style="margin-top:10px">${tile(s.active7d,'АКТИВНЫ 7Д')}${tile(s.studied,'ИЗУЧЕНО')}${tile(s.pending,'НА МОДЕРАЦИИ')}</div>
+      <div class="eyebrow" style="margin-top:24px">РАСКИДКИ ПО КАРТАМ</div>
+      <div style="margin-top:8px">${mapRows}</div>
+      <div class="eyebrow" style="margin-top:24px">ТОП АВТОРОВ</div>
+      <div style="margin-top:6px">${authors}</div>
+      <div class="eyebrow" style="margin-top:24px">ПОСЛЕДНИЕ РАСКИДКИ</div>
+      <div style="margin-top:4px">${recent}</div>
+      <div style="text-align:center;font:600 9px/1.6 var(--mono);color:#3E444A;margin-top:22px;letter-spacing:.06em">${s.mapBg&&s.mapBg.length?('СВОИ ФОНЫ: '+s.mapBg.length+' КАРТ'):'СВОИ ФОНЫ НЕ ЗАГРУЖЕНЫ'}</div>`;
+  }
+  stage.innerHTML=`<div class="view active">
+    <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
+      <button class="press" onclick="ADMIN_STATS=null;go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
+      <div class="eyebrow" style="margin-left:12px">АДМИН</div>
+      <button class="press" onclick="ADMIN_STATS=null;renderAdmin()" style="margin-left:auto;font:600 9.5px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ОБНОВИТЬ</button>
+    </div>
+    <div class="scroll pad" style="padding-top:14px;padding-bottom:20px">
+      <div style="font:700 24px/1 var(--font);letter-spacing:-.035em">Аналитика</div>
+      <div style="margin-top:14px">${body}</div>
+    </div>
+  </div>`;
 }
 function go(v,opts){ stopAnim(); Object.assign(state,opts||{}); state.view=v; render(); haptic('sel'); }
 
-function statusColor(c){ document.querySelector('.statusbar').style.color=c||'var(--muted)'; }
+function statusColor(c){ const el=document.querySelector('.statusbar'); if(el)el.style.color=c||'var(--muted)'; }
 
 /* ===== Onboarding 0 ===== */
 function renderOnb0(){
@@ -942,6 +979,7 @@ function renderProfile(){
         <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div>${!SERVER_OK?`<div style="font:600 8px/1.4 var(--mono);color:#5E656B;letter-spacing:.04em;margin-top:5px">initData:${(TG&&TG.initData)?'есть('+TG.initData.length+')':'НЕТ'} · cfg:${CFG.enabled?'on':'off'} · ${esc(SYNC_ERR||'—')}</div><button class="press" onclick="authDbg()" style="margin-top:8px;padding:8px 12px;border-radius:9px;background:#16191B;border:1px solid var(--line);font:600 9.5px/1 var(--mono);color:#C3C9CE;letter-spacing:.06em">ПРОВЕРИТЬ СВЯЗЬ</button>`:''}</div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
+      ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · АКТИВНОСТЬ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
       <div class="prem">
         <div style="display:flex;align-items:center;justify-content:space-between"><div style="font:700 15px/1 var(--font);letter-spacing:-.02em">Premium</div><span class="tag smoke">СКОРО</span></div>
         <p style="font:400 12px/1.5 var(--font);color:#A8AFB5;margin-top:9px">Коллекции, командные подборки, расширенные фильтры.</p>
@@ -1156,8 +1194,8 @@ let toastEl=null,toastT=null;
 function toast(msg){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.className='toast'; document.getElementById('app').appendChild(toastEl);} toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1900); }
 
 /* ===== Telegram BackButton ===== */
-function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
-try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='author')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
+function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
+try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='author'||state.view==='admin')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
 const _render=render;
 render=function(){ _render(); syncBack(); };
 

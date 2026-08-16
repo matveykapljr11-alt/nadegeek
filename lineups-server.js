@@ -309,6 +309,7 @@ const server = http.createServer(async (req, res) => {
     const user = verifyInitData(req.headers['x-init-data']);
     if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
     const rec = user ? userRec(user.id) : { saved: [], visited: [] };
+    if (user) { rec.seen = Date.now(); rec.visits = (rec.visits || 0) + 1; rec.name = authName(user); if (!rec.first) rec.first = Date.now(); persist(); }
     const community = Object.values(db.subs)
       .filter(s => s.status === 'approved' || (user && s.ownerId === user.id))
       .sort((a, b) => b.createdAt - a.createdAt)
@@ -317,6 +318,34 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, {
       user: user ? { id: user.id, name: authName(user) } : null,
       saved: rec.saved, visited: rec.visited, community, maps, admin: isAdmin(user)
+    });
+    return;
+  }
+
+  // ---- аналитика (владелец) ----
+  if (p === '/api/stats' && req.method === 'GET') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!isAdmin(user)) { json(res, 403, { error: 'not admin' }); return; }
+    const now = Date.now(), day = 86400000;
+    const users = Object.values(db.users);
+    const subs = Object.values(db.subs);
+    const byMap = {}, byType = {}, authors = {};
+    subs.forEach(s => { const l = s.lineup || {}; byMap[l.map] = (byMap[l.map] || 0) + 1; byType[l.type] = (byType[l.type] || 0) + 1; authors[s.authorName] = (authors[s.authorName] || 0) + 1; });
+    json(res, 200, {
+      users: users.length,
+      active24h: users.filter(u => u.seen && now - u.seen < day).length,
+      active7d: users.filter(u => u.seen && now - u.seen < 7 * day).length,
+      opens: users.reduce((n, u) => n + (u.visits || 0), 0),
+      lineups: subs.length,
+      withVideo: subs.filter(s => s.lineup && s.lineup.video).length,
+      pending: subs.filter(s => s.status !== 'approved').length,
+      saves: users.reduce((n, u) => n + (u.saved ? u.saved.length : 0), 0),
+      studied: users.reduce((n, u) => n + (u.visited ? u.visited.length : 0), 0),
+      mapBg: Object.keys(db.maps || {}),
+      byMap, byType,
+      topAuthors: Object.entries(authors).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, n]) => ({ name, n })),
+      recent: subs.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(s => ({ title: s.lineup.title, map: s.lineup.map, type: s.lineup.type, author: s.authorName, video: !!s.lineup.video, at: s.createdAt }))
     });
     return;
   }

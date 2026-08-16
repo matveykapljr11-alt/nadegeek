@@ -302,6 +302,7 @@ const server = http.createServer(async (req, res) => {
     const maps = db.maps ? Object.keys(db.maps).reduce((o, k) => { o[k] = true; return o; }, {}) : {};
     json(res, 200, {
       user: user ? { id: user.id, name: authName(user) } : null,
+      nick: (user && rec.nick) || '',
       saved: rec.saved, visited: rec.visited, community, maps, admin: isAdmin(user)
     });
     return;
@@ -372,6 +373,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- ник автора (произвольный, вместо Telegram-ника) ----
+  if (p === '/api/nick' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (!user) { json(res, 401, { error: 'auth' }); return; }
+    let b; try { b = JSON.parse(await readBody(req)); } catch (e) { b = null; }
+    const nick = String((b && b.nick) || '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 24);
+    const rec = userRec(user.id);
+    rec.nick = nick;
+    const display = nick || authName(user);
+    Object.values(db.subs).forEach(s => { if (s.ownerId === user.id) s.authorName = display; });
+    persist();
+    json(res, 200, { nick });
+    return;
+  }
+
   if (p === '/api/save' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);
     if (!user) { json(res, 401, { error: 'auth' }); return; }
@@ -408,7 +424,7 @@ const server = http.createServer(async (req, res) => {
     const rec = {
       id, lineup,
       ownerId: user ? user.id : 0,
-      authorName: authName(user),
+      authorName: (user && userRec(user.id).nick) || authName(user),
       status: (AUTO_APPROVE || isAdmin(user)) ? 'approved' : 'pending',
       createdAt: Date.now()
     };

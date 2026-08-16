@@ -250,7 +250,9 @@ const CFG = window.LINEUPS_CONFIG || {enabled:false};
 const START_PARAM = (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param) || '';
 const ME = (TG && TG.initDataUnsafe && TG.initDataUnsafe.user) || null;
 function myHandle(){ return ME ? (ME.username ? '@'+ME.username : (ME.first_name||'Игрок')) : '@you'; }
-function myInitial(){ const h=myHandle().replace('@',''); return (h[0]||'U').toUpperCase(); }
+let MY_NICK=''; try{ MY_NICK=localStorage.getItem('lu_nick')||''; }catch(e){}
+function displayName(){ return MY_NICK||myHandle(); }
+function myInitial(){ const h=displayName().replace('@','').trim(); return (h[0]||'U').toUpperCase(); }
 let SERVER_OK=false, startHandled=false, SYNC_ERR='';
 function api(pathname, body){
   const headers={'Content-Type':'application/json'};
@@ -1001,8 +1003,16 @@ function renderProfile(){
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
         <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(displayName())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
+      </div>
+      <div style="margin-top:14px;padding:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)">
+        <div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.12em">НИК АВТОРА · ВИДЕН ПОД РАСКИДКАМИ</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <input id="nickInput" maxlength="24" value="${esc(MY_NICK)}" placeholder="${esc(myHandle())}" style="flex:1;min-width:0;background:#16191B;border:1px solid var(--line2);border-radius:11px;padding:11px 12px;color:var(--text);font:600 13px/1 var(--font);outline:none">
+          <button class="press" onclick="saveNick((document.getElementById('nickInput')||{}).value||'')" style="padding:0 16px;border-radius:11px;background:var(--accent);color:#0A0B0C;font:700 12px/1 var(--font)">Сохранить</button>
+        </div>
+        <div style="font:400 10.5px/1.4 var(--font);color:var(--muted2);margin-top:9px">Твой Telegram-ник никому не виден — раскидки подписываются этим ником. Пусто — будет ${esc(myHandle())}.</div>
       </div>
       ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · АКТИВНОСТЬ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
       <div class="prem">
@@ -1032,6 +1042,10 @@ function renderProfile(){
 }
 window.openTgChannel=function(){ haptic('soft'); if(TG&&TG.openTelegramLink){try{TG.openTelegramLink('https://t.me/lineups');return;}catch(e){}} toast('Открываем @lineups'); };
 window.toggleAutoplay=function(el){ PREFS.autoplay=!(PREFS.autoplay!==false); el.classList.toggle('on',PREFS.autoplay); savePrefs(); haptic('sel'); };
+function applyNickLocal(){ LINEUPS.forEach(l=>{ if(l.mine||l.auth===0) l.authorName=displayName(); }); }
+window.saveNick=function(val){ val=(''+val).replace(/[\r\n\t]/g,' ').trim().slice(0,24); const done=()=>{ try{localStorage.setItem('lu_nick',MY_NICK);}catch(e){} applyNickLocal(); haptic('success'); toast(MY_NICK?'Ник сохранён':'Ник сброшен'); renderProfile(); };
+  if(SERVER_OK){ api('/api/nick',{nick:val}).then(d=>{ MY_NICK=(d&&typeof d.nick==='string')?d.nick:val; done(); }).catch(()=>toast('Не удалось сохранить')); }
+  else { MY_NICK=val; done(); } };
 
 /* ===== AUTHOR ===== */
 function renderAuthor(){
@@ -1048,7 +1062,7 @@ function renderAuthor(){
   <div class="view active">
     <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
       <button class="press" onclick="go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
-      <div class="eyebrow" style="margin-left:12px">АВТОР · ${esc(myHandle().toUpperCase())}</div>
+      <div class="eyebrow" style="margin-left:12px">АВТОР · ${esc(displayName().toUpperCase())}</div>
     </div>
     <div class="scroll pad" style="padding-top:16px;padding-bottom:16px">
       <div style="font:700 26px/1 var(--font);letter-spacing:-.035em">Мои раскидки</div>
@@ -1179,7 +1193,7 @@ window.publishLineup=function(){
   const proceed=(videoId,videoUrl)=>{
     const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||''};
     const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
-    const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
+    const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; nl.authorName=displayName(); if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
   };
@@ -1254,6 +1268,7 @@ function syncWithServer(){
       if(Array.isArray(d.visited)){ const V=new Set(d.visited); LINEUPS.forEach(l=>{ if(V.has(l.id))l.visited=true; }); persistVisited(); }
       if(d.maps){ Object.keys(d.maps).forEach(k=>{ MAP_IMG[k]=(CFG.apiBase||'')+'/api/mapimg?map='+k; }); }
       IS_ADMIN=!!d.admin;
+      if(typeof d.nick==='string'){ MY_NICK=d.nick; try{localStorage.setItem('lu_nick',MY_NICK);}catch(e){} }
       SERVER_OK=true;
       if(state.view==='map'||state.view==='list'||state.view==='feed'||state.view==='profile') render();
     }

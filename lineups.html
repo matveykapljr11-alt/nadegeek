@@ -936,7 +936,7 @@ function renderProfile(){
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
         <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div>${!SERVER_OK?`<div style="font:600 8px/1.4 var(--mono);color:#5E656B;letter-spacing:.04em;margin-top:5px">initData:${(TG&&TG.initData)?'есть('+TG.initData.length+')':'НЕТ'} · cfg:${CFG.enabled?'on':'off'} · ${esc(SYNC_ERR||'—')}</div>`:''}</div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div>${!SERVER_OK?`<div style="font:600 8px/1.4 var(--mono);color:#5E656B;letter-spacing:.04em;margin-top:5px">initData:${(TG&&TG.initData)?'есть('+TG.initData.length+')':'НЕТ'} · cfg:${CFG.enabled?'on':'off'} · ${esc(SYNC_ERR||'—')}</div><button class="press" onclick="authDbg()" style="margin-top:8px;padding:8px 12px;border-radius:9px;background:#16191B;border:1px solid var(--line);font:600 9.5px/1 var(--mono);color:#C3C9CE;letter-spacing:.06em">ПРОВЕРИТЬ СВЯЗЬ</button>`:''}</div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
       <div class="prem">
@@ -966,6 +966,7 @@ function renderProfile(){
 }
 window.openTgChannel=function(){ haptic('soft'); if(TG&&TG.openTelegramLink){try{TG.openTelegramLink('https://t.me/lineups');return;}catch(e){}} toast('Открываем @lineups'); };
 window.toggleAutoplay=function(el){ PREFS.autoplay=!(PREFS.autoplay!==false); el.classList.toggle('on',PREFS.autoplay); savePrefs(); haptic('sel'); };
+window.authDbg=function(){ fetch((CFG.apiBase||'')+'/api/authdbg',{method:'POST',headers:{'X-Init-Data':(TG&&TG.initData)||''}}).then(r=>r.json()).then(d=>{ const msg='keys:['+(d.keys||[]).join(',')+']\nsig:'+d.hasSignature+' token:'+d.botTokenSet+'\nmatchNoSig:'+d.matchNoSig+' matchWithSig:'+d.matchWithSig+'\nage:'+d.authDateAgeSec+'s'; if(TG&&TG.showAlert)TG.showAlert(msg); else alert(msg); }).catch(e=>{ const m='ошибка: '+e; if(TG&&TG.showAlert)TG.showAlert(m); else alert(m); }); };
 
 /* ===== AUTHOR ===== */
 function renderAuthor(){

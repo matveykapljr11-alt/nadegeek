@@ -279,6 +279,30 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { json(res, 204, {}); return; }
   if (p === '/health') { json(res, 200, { ok: true, users: Object.keys(db.users).length, subs: Object.keys(db.subs).length, kv: KV_ON }); return; }
+
+  // временная диагностика авторизации (секреты не раскрываются)
+  if (p === '/api/authdbg' && req.method === 'POST') {
+    const initData = req.headers['x-init-data'] || '';
+    const out = { present: !!initData, botTokenSet: !!BOT_TOKEN };
+    try {
+      const params = new URLSearchParams(initData);
+      const hash = params.get('hash') || '';
+      out.keys = [...params.keys()];
+      out.hasSignature = params.has('signature');
+      out.givenHash6 = hash.slice(0, 6);
+      const ad = parseInt(params.get('auth_date') || '0', 10);
+      out.authDateAgeSec = ad ? Math.round(Date.now() / 1000 - ad) : null;
+      if (BOT_TOKEN && hash) {
+        const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+        const build = (exclSig) => { const pp = new URLSearchParams(initData); pp.delete('hash'); if (exclSig) pp.delete('signature'); return [...pp.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n'); };
+        const cNo = crypto.createHmac('sha256', secret).update(build(true)).digest('hex');
+        const cWith = crypto.createHmac('sha256', secret).update(build(false)).digest('hex');
+        out.matchNoSig = cNo === hash; out.matchWithSig = cWith === hash;
+      }
+    } catch (e) { out.error = String(e.message || e); }
+    json(res, 200, out);
+    return;
+  }
   if (req.method === 'GET' && (p === '/' || p === '/index.html' || p === '/lineups.html')) { serveHtml(res); return; }
 
   // ---- вход + синхронизация ----

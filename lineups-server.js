@@ -248,21 +248,6 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { json(res, 204, {}); return; }
   if (p === '/health') { json(res, 200, { ok: true, users: Object.keys(db.users).length, subs: Object.keys(db.subs).length, kv: KV_ON }); return; }
-
-  // диагностика хранилища (без секретов): реальный write+read в Upstash
-  if (p === '/api/_diag' && req.method === 'GET') {
-    const out = { kvConfigured: KV_ON, botToken: !!BOT_TOKEN, subs: Object.keys(db.subs).length };
-    if (KV_ON) {
-      try {
-        const val = 'ping-' + Date.now();
-        await kvReq('POST', '/set/lineups_diag', val);
-        const j = await kvReq('GET', '/get/lineups_diag');
-        out.kvWrite = true; out.kvRead = !!(j && j.result === val);
-      } catch (e) { out.kvWrite = false; out.kvError = String(e.message || e); }
-    }
-    json(res, 200, out);
-    return;
-  }
   if (req.method === 'GET' && (p === '/' || p === '/index.html' || p === '/lineups.html')) { serveHtml(res); return; }
 
   // ---- вход + синхронизация ----

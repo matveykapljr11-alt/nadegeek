@@ -250,6 +250,9 @@ function haptic(t){ try{ if(!TG||!TG.HapticFeedback)return; if(t==='sel')TG.Hapt
 /* ---------- Backend (Telegram-first, с офлайн-фолбэком) ---------- */
 const CFG = window.LINEUPS_CONFIG || {enabled:false};
 const START_PARAM = (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param) || '';
+const ME = (TG && TG.initDataUnsafe && TG.initDataUnsafe.user) || null;
+function myHandle(){ return ME ? (ME.username ? '@'+ME.username : (ME.first_name||'Игрок')) : '@you'; }
+function myInitial(){ const h=myHandle().replace('@',''); return (h[0]||'U').toUpperCase(); }
 let SERVER_OK=false, startHandled=false;
 function api(pathname, body){
   const headers={'Content-Type':'application/json'};
@@ -335,38 +338,7 @@ const MAPS = {
 const AUTHORS=['@sandstone.lineups','@province.pro','@rust.nades','@pro.lineups'];
 // side: attack(T) / defense(CT). type: smoke/flash/molotov. from(orange)/to(landing blue) in map-space.
 const L = (id,map,side,type,zone,title,fx,fy,fn,tx,ty,tn,thr,dur,diff,auth)=>({id,map,side,type,zone,title,from:{x:fx,y:fy,n:fn},to:{x:tx,y:ty,n:tn},thr,dur,diff,auth,saved:false});
-let LINEUPS = [
-  // SANDSTONE attack
-  L('s1','sandstone','attack','smoke','A','One-way на плато',285,458,'TR Spawn',258,262,'A Site · короб','Jump throw','0:06','advanced',0),
-  L('s2','sandstone','attack','smoke','A','Дым на короб с респа',300,470,'T Spawn',120,140,'A Site','Jump','0:05','easy',0),
-  L('s3','sandstone','attack','flash','Mid','Флешка через арку',270,400,'Mid',210,150,'A Cross','Run throw','0:04','easy',0),
-  L('s4','sandstone','attack','smoke','Long','Дым на длинную',330,430,'Long Doors',150,120,'A Long','Stand','0:05','easy',0),
-  L('s5','sandstone','attack','molotov','A','Молотов на плент',290,420,'Ramp',175,175,'A Plant','Stand','0:05','easy',0),
-  L('s6','sandstone','attack','flash','A','Поп-флеш на выход',260,380,'Short',235,205,'A Default','Jump throw','0:03','advanced',0),
-  L('s7','sandstone','attack','smoke','B','Дым на B из тоннеля',180,440,'Tunnels',400,300,'B Site','Run','0:06','easy',2),
-  L('s8','sandstone','attack','molotov','Mid','Молотов на середину',250,410,'Mid Doors',256,256,'Mid','Stand','0:04','easy',2),
-  // SANDSTONE defense
-  L('s9','sandstone','defense','smoke','A','Ретейк-дым на A',150,110,'CT Spawn',210,180,'A Site','Stand','0:05','easy',0),
-  L('s10','sandstone','defense','flash','Mid','Флеш на пуш мида',160,140,'CT Mid',256,300,'Mid','Run throw','0:03','advanced',0),
-  L('s11','sandstone','defense','smoke','B','Дым отсечка B',420,320,'B Default',360,260,'B Cross','Stand','0:05','easy',2),
-  // PROVINCE attack
-  L('p1','province','attack','smoke','Mid','Дым на mid из окна',256,400,'T Spawn',256,256,'Mid','Jump','0:07','easy',1),
-  L('p2','province','attack','flash','A','Флешка в mid из-за угла',200,360,'A Ramp',135,210,'A Site','Run throw','0:04','easy',1),
-  L('p3','province','attack','smoke','A','Дым на выход A',180,380,'A Long',120,120,'A Site','Stand','0:06','easy',1),
-  L('p4','province','attack','molotov','B','Молотов на плент B',330,380,'B Ramp',400,150,'B Plant','Stand','0:05','advanced',1),
-  L('p5','province','attack','flash','Mid','Поп-флеш центр',256,340,'Mid Entry',256,220,'Mid','Jump throw','0:03','advanced',1),
-  L('p6','province','attack','smoke','B','Отсечка на ротацию',300,400,'B Short',380,320,'B Site','Run','0:06','easy',1),
-  // PROVINCE defense
-  L('p7','province','defense','smoke','A','Дым на ретейк A',150,180,'A CT',135,210,'A Site','Stand','0:05','easy',1),
-  L('p8','province','defense','flash','Mid','Флеш в мид',256,150,'CT Mid',256,256,'Mid','Run throw','0:03','advanced',1),
-  // RUST attack
-  L('r1','rust','attack','smoke','A','Дым на контейнер',200,340,'A Ramp',180,110,'A Site','Jump','0:05','easy',3),
-  L('r2','rust','attack','flash','Mid','Флеш через трубу',210,300,'Pipe',200,200,'Mid','Run throw','0:04','easy',3),
-  L('r3','rust','attack','molotov','A','Молотов за ящик',220,330,'A Short',180,140,'A Box','Stand','0:04','easy',3),
-  L('r4','rust','attack','smoke','B','Дым на B склад',280,360,'B Ramp',360,410,'B Site','Run','0:06','advanced',3),
-  // RUST defense
-  L('r5','rust','defense','flash','A','Флеш на пуш',270,120,'A CT',200,160,'A Site','Jump throw','0:03','advanced',3),
-];
+let LINEUPS = [];
 // per-lineup execution instructions [description, aim reference]
 const DESC={
   s1:['Встань в угол TR Spawn, прицел в правый край антенны — прыжок и бросок одновременно.','Правый край антенны'],
@@ -829,8 +801,15 @@ function feedList(){
   return base;
 }
 function renderFeed(){
-  statusColor('#C3C9CE');
   const list=feedList();
+  if(!list.length){
+    statusColor('var(--muted)');
+    stage.innerHTML=`<div class="view active">
+      <div class="empty" style="flex:1"><div style="width:54px;height:54px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#4A5157" stroke-width="1.5">${IC.feed}</svg></div><h3>Лента пуста</h3><p>Пока нет ни одной раскидки. Загрузи первую — она появится здесь и на карте.</p><button class="chip acc-on press" style="margin-top:4px" onclick="startCreate()">Добавить раскидку</button></div>
+      ${navbar('feed')}</div>`;
+    return;
+  }
+  statusColor('#C3C9CE');
   if(state.feedIdx>=list.length)state.feedIdx=0;
   const l=list[state.feedIdx];
   const nx=list[(state.feedIdx+1)%list.length];
@@ -892,7 +871,7 @@ function renderList(){
   // group by map
   const groups={}; items.forEach(l=>{ (groups[l.map]=groups[l.map]||[]).push(l); });
   let body='';
-  if(!items.length){ body = savedTab? emptyState('save','Пока ничего не сохранено','Нажмите закладку на раскидке — она появится здесь и будет доступна офлайн.', 'Открыть ленту',"go('feed',{tab:'feed'})") : emptyState('search','Ничего не подошло','Смягчите фильтры, чтобы увидеть больше раскидок.','Сбросить фильтры','resetAndList()'); }
+  if(!items.length){ body = savedTab? emptyState('save','Пока ничего не сохранено','Нажмите закладку на раскидке — она появится здесь и будет доступна офлайн.', 'Открыть ленту',"go('feed',{tab:'feed'})") : (applied? emptyState('search','Ничего не подошло','Смягчите фильтры, чтобы увидеть больше раскидок.','Сбросить фильтры','resetAndList()') : emptyState('plus','Пока пусто','Здесь появятся раскидки. Загрузи первую — с видео броска.','Добавить раскидку','startCreate()')); }
   else { body = Object.keys(groups).map(m=>`<div class="grp-h">${MAPS[m].name.toUpperCase()}<span style="width:5px;height:5px;border-radius:50%;background:#2E3439;display:inline-block"></span><span style="color:#4A5157">${groups[m].length}</span></div>`+groups[m].map(l=>listCardHTML(l,'list')).join('')).join(''); }
   stage.innerHTML=`
   <div class="view active">
@@ -923,7 +902,7 @@ function listCardHTML(l,from){
   </button>`;
 }
 function emptyState(icon,title,text,cta,fn){
-  const ic = icon==='save'?IC.save:IC.search;
+  const ic = icon==='save'?IC.save:(icon==='plus'?IC.plus:IC.search);
   return `<div class="empty" style="min-height:360px">
     <div style="width:54px;height:54px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#4A5157" stroke-width="1.5">${ic}</svg></div>
     <h3>${title}</h3><p>${text}</p>
@@ -940,8 +919,8 @@ function renderProfile(){
   <div class="view active">
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
-        <div class="prof-av">P</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">@player_nick</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
+        <div class="prof-av">${myInitial()}</div>
+        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(myHandle())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">TELEGRAM · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
       <div class="prem">
@@ -976,22 +955,22 @@ window.toggleAutoplay=function(el){ PREFS.autoplay=!(PREFS.autoplay!==false); el
 function renderAuthor(){
   statusColor('var(--muted)');
   const mine=LINEUPS.filter(l=>l.auth===0||l.mine).slice().reverse();
-  const rows = mine.slice(0,8).map((l,i)=>`
+  const saves=mine.filter(l=>l.saved).length;
+  const rows = mine.length ? mine.slice(0,20).map(l=>`
     <div class="list-card" style="align-items:center">
-      <span class="th"><svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg></span>
-      <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':'smoke'}">${l.type.toUpperCase()}</span><span class="tag neutral">${esc(l.zone)}</span></span></span>
-      <span style="text-align:right;flex:none;align-self:center">${i%3===2?'<span style="font:600 9px/1 var(--mono);color:#4A5157;letter-spacing:.06em">ЧЕРНОВИК</span>':`<span style="font:700 13px/1 var(--font)">${74+i*22}</span><span style="font:600 8px/1 var(--mono);color:var(--dim);display:block;margin-top:4px">СЕЙВОВ</span>`}</span>
-    </div>`).join('');
+      <span class="th">${videoSrc(l)?`<video src="${videoSrc(l)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:`<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>`}</span>
+      <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':'smoke'}">${l.type.toUpperCase()}</span><span class="tag neutral">${MAPS[l.map].name}</span>${videoSrc(l)?'<span class="tag neutral">ВИДЕО</span>':''}</span></span>
+      <span style="text-align:right;flex:none;align-self:center">${l.pending?'<span style="font:600 9px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕРАЦИЯ</span>':'<span style="font:600 9px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}</span>
+    </div>`).join('') : `<div class="empty" style="min-height:280px"><div style="width:54px;height:54px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#4A5157" stroke-width="1.5">${IC.plus}</svg></div><h3>Пока нет раскидок</h3><p>Загрузи первую раскидку с видео — она появится тут и на карте.</p></div>`;
   stage.innerHTML=`
   <div class="view active">
     <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
       <button class="press" onclick="go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
-      <div class="eyebrow" style="margin-left:12px">АВТОР · @SANDSTONE.LINEUPS</div>
+      <div class="eyebrow" style="margin-left:12px">АВТОР · ${esc(myHandle().toUpperCase())}</div>
     </div>
     <div class="scroll pad" style="padding-top:16px;padding-bottom:16px">
       <div style="font:700 26px/1 var(--font);letter-spacing:-.035em">Мои раскидки</div>
-      <div class="stat3"><div class="stat"><b>128</b><span>ОПУБЛИКОВАНО</span></div><div class="stat"><b>14</b><span>ЧЕРНОВИКОВ</span></div><div class="stat"><b>4.2K</b><span>СОХРАНЕНИЙ</span></div></div>
-      <div style="display:flex;gap:8px;margin-top:16px"><button class="chip on">Все</button><button class="chip">Черновики</button><button class="chip">Скрытые</button></div>
+      <div class="stat3"><div class="stat"><b>${mine.length}</b><span>ОПУБЛИКОВАНО</span></div><div class="stat"><b>${mine.filter(l=>videoSrc(l)).length}</b><span>С ВИДЕО</span></div><div class="stat"><b>${saves}</b><span>В ИЗБРАННОМ</span></div></div>
       ${rows}
     </div>
     <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-accent press" onclick="startCreate()"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#0A0B0C" stroke-width="2" style="margin-right:6px">${IC.plus}</svg>Добавить раскидку</button></div>

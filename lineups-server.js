@@ -38,6 +38,7 @@
  */
 
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -48,10 +49,14 @@ const BOT_USERNAME = process.env.BOT_USERNAME || '';
 const APP_NAME = process.env.APP_NAME || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
 const AUTO_APPROVE = process.env.AUTO_APPROVE !== '0';
+// Куда бот кладёт видео (приватный канал/группа с ботом-админом). Если пусто —
+// видео отправляется в чат самого загрузившего (нужно чтобы он нажал Start у бота).
+const STORAGE_CHAT_ID = process.env.STORAGE_CHAT_ID || '';
 
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
 const MAX_BODY_BYTES = 16 * 1024;
+const MAX_VIDEO_BYTES = 32 * 1024 * 1024; // 32 МБ (лимит sendVideo у бота — 50 МБ)
 
 /* ----------------------------------------------------- storage */
 let db = { users: {}, subs: {}, seq: 1 };
@@ -142,8 +147,54 @@ function cleanLineup(l) {
     dur: /^\d:\d\d$/.test(l.dur) ? l.dur : '0:05',
     diff: l.diff === 'advanced' ? 'advanced' : 'easy',
     desc: str(l.desc, 140),
-    aim: str(l.aim, 60)
+    aim: str(l.aim, 60),
+    video: (typeof l.video === 'string' && /^[A-Za-z0-9_-]{10,220}$/.test(l.video)) ? l.video : ''
   };
+}
+
+/* ----------------------------------------------------- telegram bot api (видео-хранилище) */
+function tgCall(method, body) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body || {});
+    const req = https.request('https://api.telegram.org/bot' + BOT_TOKEN + '/' + method, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    }, resp => { let b = ''; resp.on('data', c => b += c); resp.on('end', () => { try { resolve(JSON.parse(b)); } catch (e) { reject(e); } }); });
+    req.on('error', reject); req.write(data); req.end();
+  });
+}
+// Загрузка видео в Telegram → возвращает постоянный file_id.
+function tgSendVideo(chatId, buf, mime) {
+  return new Promise((resolve, reject) => {
+    const boundary = '----lu' + crypto.randomBytes(8).toString('hex');
+    const ct = /^video\//.test(mime || '') ? mime : 'video/mp4';
+    const pre = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="supports_streaming"\r\n\r\ntrue\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="video"; filename="lineup.mp4"\r\nContent-Type: ${ct}\r\n\r\n`, 'utf8');
+    const post = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+    const body = Buffer.concat([pre, buf, post]);
+    const req = https.request('https://api.telegram.org/bot' + BOT_TOKEN + '/sendVideo', {
+      method: 'POST', headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary, 'Content-Length': body.length }
+    }, resp => {
+      let b = ''; resp.on('data', c => b += c);
+      resp.on('end', () => {
+        try {
+          const j = JSON.parse(b);
+          if (j.ok) { const f = j.result.video || j.result.animation || j.result.document; resolve(f && f.file_id); }
+          else reject(new Error(j.description || 'sendVideo failed'));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+}
+function readBodyRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    let n = 0; const chunks = [];
+    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('too large')); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 // Раскидка из submission в формат клиента.
 function subToLineup(rec, meId) {
@@ -237,6 +288,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- загрузка видео в Telegram (нужен initData + BOT_TOKEN) ----
+  if (p === '/api/upload' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!BOT_TOKEN) { json(res, 503, { error: 'no bot token' }); return; }
+    let buf; try { buf = await readBodyRaw(req, MAX_VIDEO_BYTES); } catch (e) { json(res, 413, { error: 'too large (max 32MB)' }); return; }
+    if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
+    const chatId = STORAGE_CHAT_ID || (user && user.id);
+    if (!chatId) { json(res, 500, { error: 'no storage chat' }); return; }
+    try {
+      const fid = await tgSendVideo(chatId, buf, req.headers['content-type']);
+      if (!fid) { json(res, 502, { error: 'send failed' }); return; }
+      json(res, 200, { video: fid });
+    } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+    return;
+  }
+
+  // ---- проксирование видео из Telegram (токен не отдаём клиенту) ----
+  if (p === '/api/video' && req.method === 'GET') {
+    const id = u.searchParams.get('id') || '';
+    const rec = db.subs[id];
+    const fid = rec && rec.lineup && rec.lineup.video;
+    if (!BOT_TOKEN || !fid) { res.writeHead(404, { 'Access-Control-Allow-Origin': '*' }); res.end('no video'); return; }
+    let gf; try { gf = await tgCall('getFile', { file_id: fid }); } catch (e) { gf = null; }
+    if (!gf || !gf.ok || !gf.result.file_path) { res.writeHead(404); res.end('no file'); return; }
+    https.get('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path, tr => {
+      res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' });
+      tr.pipe(res);
+    }).on('error', () => { res.writeHead(502); res.end('upstream'); });
+    return;
+  }
+
   // ---- одиночная раскидка для deep-link (публично) ----
   if (p === '/api/lineup' && req.method === 'GET') {
     const id = u.searchParams.get('id') || '';
@@ -254,5 +337,6 @@ server.listen(PORT, () => {
   console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
   console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
   console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация' : 'модерация (pending)'}`);
+  console.log(`  video: ${BOT_TOKEN ? ('Telegram, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено (нет BOT_TOKEN)'}`);
   if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);
 });

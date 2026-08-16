@@ -257,6 +257,13 @@ function api(pathname, body){
   return fetch((CFG.apiBase||'')+pathname, {method:body?'POST':'GET', headers, body:body?JSON.stringify(body):undefined})
     .then(r=>r.ok?r.json():Promise.reject(r.status));
 }
+let createVideo=null; // выбранный файл видео в create-флоу
+function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
+function uploadVideo(file){
+  const headers={'Content-Type':file.type||'video/mp4'};
+  try{ if(TG&&TG.initData) headers['X-Init-Data']=TG.initData; }catch(e){}
+  return fetch((CFG.apiBase||'')+'/api/upload',{method:'POST',headers,body:file}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(d=>d.video);
+}
 
 /* ---------- SVG icons ---------- */
 const IC = {
@@ -749,7 +756,7 @@ function renderDetail(){
   stage.innerHTML=`
   <div class="view active">
     <div class="detail-media" id="detailMedia">
-      ${throwSvg(l,{bright:.62})}
+      ${videoSrc(l)? `<video id="detailVideo" src="${videoSrc(l)}" loop muted playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>` : throwSvg(l,{bright:.62})}
       <div style="position:absolute;left:0;right:0;top:0;height:150px;background:linear-gradient(to bottom,rgba(6,7,8,.8),transparent);pointer-events:none"></div>
       <div style="position:absolute;left:16px;top:96px;display:flex;gap:6px"><span class="tag solid">${THR_TAG[l.type]}</span><span class="tag line">${MAPS[l.map].name.toUpperCase()}</span></div>
       <button class="press" id="spdPill" onclick="cycleSpeed()" style="position:absolute;right:16px;top:104px;padding:6px 10px;border-radius:9px;background:rgba(10,11,12,.62);border:1px solid rgba(255,255,255,.1);font:600 9px/1 var(--mono);letter-spacing:.08em;color:#F5F6F7">${state.detailSpeed}× · ${l.dur}</button>
@@ -798,13 +805,15 @@ function renderDetail(){
       <button class="press" onclick="viewOnMap('${l.id}')" style="height:46px;padding:0 14px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;gap:8px;font:600 12.5px/1 var(--font);color:#D6DADD"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#D6DADD" stroke-width="1.5">${IC.map}</svg>На карте</button>
     </div>
   </div>`;
-  playThrow(document.getElementById('detailMedia'), l, ()=> state.detailPlaying? state.detailSpeed:0);
+  const _vs=videoSrc(l);
+  if(_vs){ const v=document.getElementById('detailVideo'); if(v){ v.playbackRate=state.detailSpeed; if(state.detailPlaying)v.play().catch(()=>{}); } }
+  else playThrow(document.getElementById('detailMedia'), l, ()=> state.detailPlaying? state.detailSpeed:0);
 }
 function playIcon(){ return state.detailPlaying
   ? '<svg width="16" height="16" viewBox="0 0 20 20" fill="#fff"><rect x="5" y="4" width="3.4" height="12" rx="1"/><rect x="11.6" y="4" width="3.4" height="12" rx="1"/></svg>'
   : '<svg width="17" height="17" viewBox="0 0 20 20" fill="#fff"><path d="M6 4l10 6-10 6z"/></svg>'; }
-window.togglePlay=function(){ state.detailPlaying=!state.detailPlaying; haptic('soft'); const b=document.getElementById('playBtn'); if(b){ b.innerHTML=playIcon(); b.style.opacity=state.detailPlaying?'.5':'1'; } };
-window.cycleSpeed=function(){ const s=[0.5,1,1.5]; state.detailSpeed=s[(s.indexOf(state.detailSpeed)+1)%s.length]; haptic('sel'); const l=LINEUPS.find(x=>x.id===state.detailId); const p=document.getElementById('spdPill'); if(p&&l)p.textContent=`${state.detailSpeed}× · ${l.dur}`; };
+window.togglePlay=function(){ state.detailPlaying=!state.detailPlaying; haptic('soft'); const v=document.getElementById('detailVideo'); if(v){ if(state.detailPlaying)v.play().catch(()=>{}); else v.pause(); } const b=document.getElementById('playBtn'); if(b){ b.innerHTML=playIcon(); b.style.opacity=state.detailPlaying?'.5':'1'; } };
+window.cycleSpeed=function(){ const s=[0.5,1,1.5]; state.detailSpeed=s[(s.indexOf(state.detailSpeed)+1)%s.length]; haptic('sel'); const v=document.getElementById('detailVideo'); if(v)v.playbackRate=state.detailSpeed; const l=LINEUPS.find(x=>x.id===state.detailId); const p=document.getElementById('spdPill'); if(p&&l)p.textContent=`${state.detailSpeed}× · ${l.dur}`; };
 function saveBtnInner(l){ return l.saved? `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранено` : `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранить`; }
 window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('list',{tab:'list'}); else if(f==='feed')go('feed',{tab:'feed'}); else if(f==='author')go('author'); else go('map',{tab:'map'}); };
 window.stepDetail=function(d){ const list=(state.detailFrom==='list')?filteredForList():typeLineups(); const i=list.findIndex(x=>x.id===state.detailId); let ni=i+d; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; if(list[ni]){ state.detailId=list[ni].id; if(state.detailFrom==='map'){state.sel=ni;} renderDetail(); haptic('sel'); } };
@@ -831,7 +840,7 @@ function renderFeed(){
       <div class="feed-track" id="feedTrack">
         <div class="feed-slide" id="feedSlide">
           <div class="feed-media" id="feedMedia">
-            ${throwSvg(l,{bright:.6})}
+            ${videoSrc(l)? `<video id="feedVideo" src="${videoSrc(l)}" loop muted autoplay playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>` : throwSvg(l,{bright:.6})}
             <div class="grad-t"></div><div class="grad-b"></div>
           </div>
         </div>
@@ -855,7 +864,7 @@ function renderFeed(){
     </div>
     ${navbar('feed')}
   </div>`;
-  playThrow(document.getElementById('feedMedia'), l, ()=>1);
+  if(!videoSrc(l)) playThrow(document.getElementById('feedMedia'), l, ()=>1);
   attachFeedSwipe(list);
 }
 window.setFeedTab=function(t){ state.feedTab=t; state.feedIdx=0; renderFeed(); haptic('sel'); };
@@ -946,7 +955,7 @@ function renderProfile(){
         <span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Telegram-канал</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">НОВЫЕ РАСКИДКИ КАЖДУЮ НЕДЕЛЮ</span></span>
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg>
       </button>
-      <button class="press" onclick="go('create',{createStep:0})" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:15px 0;border-bottom:1px solid var(--line2)">
+      <button class="press" onclick="startCreate()" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:15px 0;border-bottom:1px solid var(--line2)">
         <span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.5">${IC.plus}</svg></span>
         <span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Предложить раскидку</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">СНИМИ ВИДЕО · МЫ ОПУБЛИКУЕМ</span></span>
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg>
@@ -985,7 +994,7 @@ function renderAuthor(){
       <div style="display:flex;gap:8px;margin-top:16px"><button class="chip on">Все</button><button class="chip">Черновики</button><button class="chip">Скрытые</button></div>
       ${rows}
     </div>
-    <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-accent press" onclick="go('create',{createStep:0})"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#0A0B0C" stroke-width="2" style="margin-right:6px">${IC.plus}</svg>Добавить раскидку</button></div>
+    <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-accent press" onclick="startCreate()"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#0A0B0C" stroke-width="2" style="margin-right:6px">${IC.plus}</svg>Добавить раскидку</button></div>
   </div>`;
 }
 
@@ -1002,11 +1011,21 @@ function renderCreate(){
     <div class="scroll pad" style="padding-top:16px">
       <div style="font:700 20px/1.2 var(--font);letter-spacing:-.03em">Загрузи видео броска</div>
       <p style="font:400 12.5px/1.5 var(--font);color:var(--muted2);margin-top:9px">Вертикальное, до 15 секунд. Обрежем и зациклим автоматически.</p>
-      <div style="margin-top:18px;border-radius:16px;background:#0F1011;border:1.5px dashed rgba(255,255,255,.12);padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:12px">
+      <input id="cVideoInput" type="file" accept="video/*" style="display:none" onchange="onVideoPick(this)">
+      ${createVideo? `
+      <div style="margin-top:18px;border-radius:16px;background:#0F1011;border:1px solid rgba(255,255,255,.08);overflow:hidden">
+        <video src="${URL.createObjectURL(createVideo)}" muted autoplay loop playsinline style="width:100%;max-height:280px;object-fit:cover;background:#000;display:block"></video>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="#4ADE80"><path d="M8 13.2 4.8 10l-1.3 1.3L8 15.8l8.5-8.5L15.2 6z"/></svg>
+          <span style="flex:1;min-width:0;font:600 11px/1.3 var(--mono);color:#C3C9CE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(createVideo.name)} · ${(createVideo.size/1048576).toFixed(1)} МБ</span>
+          <button class="press" onclick="document.getElementById('cVideoInput').click()" style="font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ЗАМЕНИТЬ</button>
+        </div>
+      </div>` : `
+      <div class="press" onclick="document.getElementById('cVideoInput').click()" style="margin-top:18px;border-radius:16px;background:#0F1011;border:1.5px dashed rgba(255,255,255,.12);padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;cursor:pointer">
         <div style="width:48px;height:48px;border-radius:14px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.5">${IC.share}</svg></div>
-        <button class="btn-primary press" style="width:auto;padding:0 18px;height:42px" onclick="toast('Откроется галерея Telegram')">Выбрать из галереи</button>
-        <span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em">ИЛИ СНЯТЬ ЭКРАН СЕЙЧАС</span>
-      </div>
+        <div class="btn-primary" style="width:auto;padding:0 18px;height:42px;pointer-events:none">Выбрать видео</div>
+        <span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em">ВЕРТИКАЛЬНОЕ · ДО 32 МБ</span>
+      </div>`}
       <div class="eyebrow" style="margin-top:22px">СКРИНШОТЫ · НЕОБЯЗАТЕЛЬНО</div>
       <div style="display:flex;gap:10px;margin-top:11px">
         <div style="flex:1;height:96px;border-radius:12px;background:#0F1011;border:1px solid var(--line2);position:relative"><span style="position:absolute;left:8px;top:8px;font:700 8px/1 var(--mono);color:var(--muted2);letter-spacing:.08em">1 · ВСТАТЬ</span></div>
@@ -1056,6 +1075,8 @@ function renderCreate(){
   }
   stage.innerHTML=`<div class="view active">${inner}</div>`;
 }
+window.startCreate=function(){ createVideo=null; go('create',{createStep:0}); };
+window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>32*1024*1024){ toast('Видео больше 32 МБ'); input.value=''; return; } createVideo=f; haptic('sel'); renderCreate(); };
 window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('author'); };
 window.createNext=function(){ state.createStep++; renderCreate(); haptic('sel'); };
 window.pickOne=function(grp,el){ document.getElementById(grp).querySelectorAll('.chip').forEach(c=>{c.classList.remove('acc-on','on'); c.classList.add('chip');}); const acc=grp==='cType'; el.classList.add(acc?'acc-on':'on'); haptic('sel'); };
@@ -1066,11 +1087,18 @@ window.publishLineup=function(){
   const side=selChip('cSide')==='ЗАЩИТА'?'defense':'attack';
   const diff=selChip('cDiff')==='ADV'?'advanced':'easy';
   const dd=((document.getElementById('cDesc')||{}).value||'').trim();
-  const payload={map:'sandstone',side,type,zone:'A',title:name,from:{x:300,y:470,n:'TR Spawn'},to:{x:120,y:140,n:'A Site'},thr:'Jump throw',dur:'0:06',diff,desc:dd,aim:'Правый край антенны'};
-  const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
-  const local=()=>{ const id='u'+Date.now(); const nl=L(id,'sandstone',side,type,'A',name,300,470,'TR Spawn',120,140,'A Site','Jump throw','0:06',diff,0); nl.desc=dd; nl.aim='Правый край антенны'; finish(nl); };
-  if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
-  else local();
+  const proceed=(videoId,videoUrl)=>{
+    const payload={map:'sandstone',side,type,zone:'A',title:name,from:{x:300,y:470,n:'TR Spawn'},to:{x:120,y:140,n:'A Site'},thr:'Jump throw',dur:'0:06',diff,desc:dd,aim:'Правый край антенны',video:videoId||''};
+    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
+    const local=()=>{ const id='u'+Date.now(); const nl=L(id,'sandstone',side,type,'A',name,300,470,'TR Spawn',120,140,'A Site','Jump throw','0:06',diff,0); nl.desc=dd; nl.aim='Правый край антенны'; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
+    if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
+    else local();
+  };
+  if(createVideo){
+    const localUrl=URL.createObjectURL(createVideo);
+    if(SERVER_OK){ toast('Загружаем видео…'); uploadVideo(createVideo).then(id=>proceed(id,localUrl)).catch(()=>{ toast('Видео не загрузилось — публикую без него'); proceed('',localUrl); }); }
+    else proceed('',localUrl);
+  } else proceed('','');
 };
 
 /* ===== navbar ===== */

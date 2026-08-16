@@ -261,6 +261,7 @@ function api(pathname, body){
     .then(r=>r.ok?r.json():Promise.reject(r.status));
 }
 let createVideo=null; // выбранный файл видео в create-флоу
+let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='';
 function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
 function uploadVideo(file){
   const headers={'Content-Type':file.type||'video/mp4'};
@@ -1014,23 +1015,38 @@ function renderCreate(){
     </div>
     <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-primary press" onclick="createNext()">Дальше · точки на карте<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#0A0B0C" stroke-width="2">${IC.chevR}</svg></button></div>`;
   }
-  else if(step===1){ inner=`${head('Точки на карте','2 / 3')}
-    <div style="padding:10px 20px 0;flex:none;display:flex;gap:16px"><span style="font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ОТКУДА · TR Spawn</span><span style="font:600 10px/1 var(--mono);color:var(--landing2);letter-spacing:.08em">КУДА · A Site</span></div>
-    <div class="map-wrap" style="margin:12px 16px;border-radius:16px;flex:1">
-      <svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">${radar('sandstone')}
-        <path d="M300 470Q220 300 130 154" stroke="#FF6B35" stroke-width="2" fill="none" stroke-dasharray="1.5 6"/>
-        <circle cx="300" cy="470" r="15" fill="#FF6B35" stroke="#0A0B0C" stroke-width="2.5"/><path d="M300 463v14M293 470h14" stroke="#0A0B0C" stroke-width="2.2"/>
-        <circle cx="130" cy="154" r="7" fill="#8FB3CC"/></svg>
-      <div class="map-ctrl"><button>+</button><div class="sep"></div><button>−</button></div>
+  else if(step===1){
+    const mapsChips=Object.keys(MAPS).map(id=>`<button class="chip ${createMap===id?'on':''} press" onclick="setCreateMap('${id}')">${MAPS[id].name}</button>`).join('');
+    const ready=createFrom&&createTo;
+    inner=`${head('Точки на карте','2 / 3')}
+    <div style="padding:10px 20px 0;flex:none">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px">${mapsChips}</div>
+      <div class="seg" style="margin-top:10px">
+        <button class="${createPlacing==='from'?'on':''}" onclick="createPlacing='from';renderCreate()"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.6px solid #FF6B35;margin-right:6px;vertical-align:middle"></span>Откуда${createFrom?' ✓':''}</button>
+        <button class="${createPlacing==='to'?'on':''}" onclick="createPlacing='to';renderCreate()"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8FB3CC;margin-right:6px;vertical-align:middle"></span>Куда${createTo?' ✓':''}</button>
+      </div>
     </div>
-    <p style="padding:0 20px;font:400 11.5px/1.5 var(--font);color:var(--muted2);flex:none">Тапни, где ты стоишь. Долгий тап — точное позиционирование лупой.</p>
-    <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-primary press" onclick="createNext()">Дальше · параметры<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#0A0B0C" stroke-width="2">${IC.chevR}</svg></button></div>`;
+    <div style="padding:12px 20px 0;flex:1;display:flex;align-items:center;justify-content:center;min-height:0">
+      <div id="createMap" onclick="mapTap(event)" style="width:100%;aspect-ratio:1;max-height:100%;border-radius:16px;overflow:hidden;position:relative;background:var(--mapbg);border:1px solid var(--line);cursor:crosshair;touch-action:manipulation">
+        <svg viewBox="0 0 512 512" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${radar(MAPS[createMap].radar)}
+          ${ready?`<path d="M${createFrom.x} ${createFrom.y}Q${(createFrom.x+createTo.x)/2} ${Math.min(createFrom.y,createTo.y)-60} ${createTo.x} ${createTo.y}" stroke="#FF6B35" stroke-width="2" fill="none" stroke-dasharray="2 6"/>`:''}
+          ${createFrom?`<circle cx="${createFrom.x}" cy="${createFrom.y}" r="13" fill="#FF6B35" stroke="#0A0B0C" stroke-width="2.5"/><path d="M${createFrom.x} ${createFrom.y-6}v12M${createFrom.x-6} ${createFrom.y}h12" stroke="#0A0B0C" stroke-width="2" stroke-linecap="round"/>`:''}
+          ${createTo?`<path d="M${createTo.x} ${createTo.y-9}v6M${createTo.x} ${createTo.y+3}v6M${createTo.x-9} ${createTo.y}h6M${createTo.x+3} ${createTo.y}h6" stroke="#8FB3CC" stroke-width="1.8"/><circle cx="${createTo.x}" cy="${createTo.y}" r="6" fill="#8FB3CC"/>`:''}
+        </svg>
+      </div>
+    </div>
+    <div style="padding:10px 20px 0;flex:none;display:flex;gap:10px">
+      <input value="${esc(createFromN)}" placeholder="Откуда · напр. TR Spawn" oninput="createFromN=this.value" style="flex:1;min-width:0;background:#16191B;border:1px solid var(--line2);border-radius:11px;padding:11px 12px;color:var(--text);font:600 12px/1 var(--font);outline:none">
+      <input value="${esc(createToN)}" placeholder="Куда · напр. A Site" oninput="createToN=this.value" style="flex:1;min-width:0;background:#16191B;border:1px solid var(--line2);border-radius:11px;padding:11px 12px;color:var(--text);font:600 12px/1 var(--font);outline:none">
+    </div>
+    <p style="padding:8px 20px 0;font:400 11.5px/1.45 var(--font);color:var(--muted2);flex:none">${!createFrom?'Тапни по карте, где ты стоишь (откуда бросаешь).':(!createTo?'Теперь тапни, куда прилетает граната.':'Готово. Чтобы поправить — выбери «Откуда»/«Куда» сверху и тапни заново.')}</p>
+    <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-primary press" ${ready?'':'style="opacity:.45;pointer-events:none"'} onclick="createNext()">Дальше · параметры<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#0A0B0C" stroke-width="2">${IC.chevR}</svg></button></div>`;
   }
   else { inner=`${head('Параметры','ВСЁ ГОТОВО')}
     <div class="scroll pad" style="padding-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)">
-        <div style="display:flex;align-items:center;gap:11px"><div style="width:40px;height:40px;border-radius:10px;background:#0F1011;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 16 16" fill="#FF6B35">${IC.play}</svg></div><div><div style="font:600 11px/1 var(--font)">Видео 0:06 · 2 скриншота</div><div style="font:600 9px/1 var(--mono);color:var(--muted2);letter-spacing:.06em;margin-top:6px">TR SPAWN → A SITE</div></div></div>
-        <span style="font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ИЗМЕНИТЬ</span>
+        <div style="display:flex;align-items:center;gap:11px;min-width:0"><div style="width:40px;height:40px;border-radius:10px;background:#0F1011;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center">${createVideo?`<video src="${URL.createObjectURL(createVideo)}" muted playsinline style="width:100%;height:100%;object-fit:cover"></video>`:`<svg width="14" height="14" viewBox="0 0 16 16" fill="#FF6B35">${IC.play}</svg>`}</div><div style="min-width:0"><div style="font:600 11px/1 var(--font)">${createVideo?'Видео выбрано':'Без видео'} · ${MAPS[createMap].name}</div><div style="font:600 9px/1 var(--mono);color:var(--muted2);letter-spacing:.06em;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((createFromN||'Откуда').toUpperCase())} → ${esc((createToN||'Куда').toUpperCase())}</div></div></div>
+        <button class="press" onclick="state.createStep=0;renderCreate()" style="font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em;flex:none">ИЗМЕНИТЬ</button>
       </div>
       <div class="eyebrow" style="margin-top:20px">НАЗВАНИЕ</div>
       <input id="cName" value="One-way smoke на плато" oninput="this.nextElementSibling.textContent=this.value.length+' / 90'" style="width:100%;margin-top:10px;background:#16191B;border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--text);font:600 14px/1 var(--font);outline:none">
@@ -1054,7 +1070,9 @@ function renderCreate(){
   }
   stage.innerHTML=`<div class="view active">${inner}</div>`;
 }
-window.startCreate=function(){ createVideo=null; go('create',{createStep:0}); };
+window.startCreate=function(){ createVideo=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; go('create',{createStep:0}); };
+window.setCreateMap=function(id){ if(createMap!==id){ createMap=id; createFrom=null; createTo=null; createPlacing='from'; } renderCreate(); haptic('sel'); };
+window.mapTap=function(e){ const el=document.getElementById('createMap'); if(!el)return; const r=el.getBoundingClientRect(); const px=(e.touches?e.touches[0].clientX:e.clientX), py=(e.touches?e.touches[0].clientY:e.clientY); const x=Math.max(8,Math.min(504,(px-r.left)/r.width*512)); const y=Math.max(8,Math.min(504,(py-r.top)/r.height*512)); if(createPlacing==='from'){ createFrom={x,y}; createPlacing='to'; } else { createTo={x,y}; } haptic('sel'); renderCreate(); };
 window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>32*1024*1024){ toast('Видео больше 32 МБ'); input.value=''; return; } createVideo=f; haptic('sel'); renderCreate(); };
 window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('author'); };
 window.createNext=function(){ state.createStep++; renderCreate(); haptic('sel'); };
@@ -1066,10 +1084,12 @@ window.publishLineup=function(){
   const side=selChip('cSide')==='ЗАЩИТА'?'defense':'attack';
   const diff=selChip('cDiff')==='ADV'?'advanced':'easy';
   const dd=((document.getElementById('cDesc')||{}).value||'').trim();
+  const fromP={x:createFrom?createFrom.x:300,y:createFrom?createFrom.y:470,n:(createFromN.trim()||'Откуда')};
+  const toP={x:createTo?createTo.x:120,y:createTo?createTo.y:140,n:(createToN.trim()||'Куда')};
   const proceed=(videoId,videoUrl)=>{
-    const payload={map:'sandstone',side,type,zone:'A',title:name,from:{x:300,y:470,n:'TR Spawn'},to:{x:120,y:140,n:'A Site'},thr:'Jump throw',dur:'0:06',diff,desc:dd,aim:'Правый край антенны',video:videoId||''};
+    const payload={map:createMap,side,type,zone:'A',title:name,from:fromP,to:toP,thr:'Jump throw',dur:'0:06',diff,desc:dd,aim:toP.n,video:videoId||''};
     const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
-    const local=()=>{ const id='u'+Date.now(); const nl=L(id,'sandstone',side,type,'A',name,300,470,'TR Spawn',120,140,'A Site','Jump throw','0:06',diff,0); nl.desc=dd; nl.aim='Правый край антенны'; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
+    const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,'A',name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,'Jump throw','0:06',diff,0); nl.desc=dd; nl.aim=toP.n; if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
   };

@@ -262,6 +262,7 @@ function api(pathname, body){
 }
 let createVideo=null; // выбранный файл видео в create-флоу
 let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='';
+let MAP_IMG={}, IS_ADMIN=false; // фоны карт (URL) + флаг владельца
 function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
 function uploadVideo(file){
   const headers={'Content-Type':file.type||'video/mp4'};
@@ -317,6 +318,7 @@ const MAPDEF = {
     R:[[78,78,92,80,4],[200,88,82,70,4,1],[330,88,92,80,4],[88,238,82,80,4,1],[338,248,82,80,4],[78,358,92,80,4],[210,348,82,80,4,1],[330,358,92,80,4]]}
 };
 function radar(kind){
+  if(typeof MAP_IMG!=='undefined' && MAP_IMG[kind]) return `<image href="${MAP_IMG[kind]}" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid slice"/>`;
   const m = MAPDEF[kind] || MAPDEF.sandstone;
   const ln = 'rgba(255,255,255,.05)';
   const paths = (m.L||[]).map(d=>`<path d="${d}" stroke="${m.c}" stroke-width="30" fill="none" stroke-linecap="round"/>`).join('');
@@ -637,13 +639,27 @@ function attachMapPan(){
 }
 
 /* ===== Map picker sheet ===== */
+window.uploadMapImg=function(id,input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  if(f.size>12*1024*1024){ toast('Картинка больше 12 МБ'); input.value=''; return; }
+  toast('Загружаем фон…');
+  const headers={'Content-Type':f.type||'image/jpeg'};
+  try{ if(TG&&TG.initData) headers['X-Init-Data']=TG.initData; }catch(e){}
+  fetch((CFG.apiBase||'')+'/api/mapimg?map='+encodeURIComponent(id),{method:'POST',headers,body:f})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(()=>{ MAP_IMG[id]=(CFG.apiBase||'')+'/api/mapimg?map='+encodeURIComponent(id)+'&t='+Date.now(); haptic('success'); toast('Фон карты обновлён'); openMapPicker(); })
+    .catch(err=>{ toast(err===403?'Менять фон может только владелец':'Не удалось загрузить'); });
+};
 function openMapPicker(){
   const rows = Object.keys(MAPS).map(id=>`
-    <button class="map-row press" style="width:100%;text-align:left" onclick="pickMap('${id}')">
-      <span class="mini"><svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%">${radar(MAPS[id].radar)}</svg>${id===state.map?'<span style=\"position:absolute;inset:0;box-shadow:inset 0 0 0 2px var(--accent);border-radius:12px\"></span>':''}</span>
-      <span class="info"><b>${MAPS[id].name}</b><span>${mapTotal(id)} РАСКИДОК · ${new Set(LINEUPS.filter(l=>l.map===id).map(l=>l.type)).size} ТИПА</span></span>
-      <span class="cnt"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></span>
-    </button>`).join('');
+    <div class="map-row" style="gap:10px;padding:12px 0">
+      <button class="press" onclick="pickMap('${id}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:13px;text-align:left">
+        <span class="mini"><svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%">${radar(MAPS[id].radar)}</svg>${id===state.map?'<span style="position:absolute;inset:0;box-shadow:inset 0 0 0 2px var(--accent);border-radius:12px"></span>':''}</span>
+        <span class="info"><b>${MAPS[id].name}</b><span>${mapTotal(id)} РАСКИДОК${MAP_IMG[id]?' · СВОЙ ФОН':''}</span></span>
+      </button>
+      ${IS_ADMIN?`<label class="press" style="flex:none;padding:9px 10px;border-radius:9px;background:#16191B;border:1px solid var(--line);font:600 8.5px/1 var(--mono);color:#9AA1A7;letter-spacing:.06em;cursor:pointer;align-self:center">ФОН<input type="file" accept="image/*" style="display:none" onchange="uploadMapImg('${id}',this)"></label>`:''}
+      <span class="cnt" style="align-self:center"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></span>
+    </div>`).join('');
   const total = LINEUPS.length;
   openSheet(`
     <div class="sheet-h"><h3>Выбор карты</h3><span class="mono" style="font:600 10px/1 var(--mono);color:var(--dim);letter-spacing:.06em">${Object.keys(MAPS).length} КАРТЫ · ${total} РАСКИДОК</span></div>
@@ -1160,6 +1176,8 @@ function syncWithServer(){
       if(Array.isArray(d.community)) d.community.forEach(cl=>{ const ex=LINEUPS.find(x=>x.id===cl.id); if(ex)Object.assign(ex,cl); else { if(cl.mine)cl.auth=0; LINEUPS.push(cl); } });
       if(Array.isArray(d.saved)){ const S=new Set(d.saved); LINEUPS.forEach(l=>l.saved=S.has(l.id)); persist(); }
       if(Array.isArray(d.visited)){ const V=new Set(d.visited); LINEUPS.forEach(l=>{ if(V.has(l.id))l.visited=true; }); persistVisited(); }
+      if(d.maps){ Object.keys(d.maps).forEach(k=>{ MAP_IMG[k]=(CFG.apiBase||'')+'/api/mapimg?map='+k; }); }
+      IS_ADMIN=!!d.admin;
       SERVER_OK=true;
       if(state.view==='map'||state.view==='list'||state.view==='feed'||state.view==='profile') render();
     }

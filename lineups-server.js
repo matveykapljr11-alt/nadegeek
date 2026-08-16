@@ -58,6 +58,9 @@ const STORAGE_CHAT_ID = process.env.STORAGE_CHAT_ID || '';
 const KV_URL = (process.env.KV_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
 const KV_TOKEN = process.env.KV_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const KV_ON = !!(KV_URL && KV_TOKEN);
+// Telegram id владельцев (через запятую), кому можно менять фоны карт.
+// Пусто = разрешено любому авторизованному (MVP; для прода задай свой id).
+const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
@@ -126,6 +129,7 @@ function authName(u) {
   if (u.username) return '@' + u.username;
   return (u.first_name || 'Игрок');
 }
+function isAdmin(u) { if (!u) return false; if (!ADMIN_IDS.length) return true; return ADMIN_IDS.includes(String(u.id)); }
 
 /* ----------------------------------------------------- helpers */
 function json(res, code, obj) {
@@ -220,6 +224,32 @@ function readBodyRaw(req, max) {
     req.on('error', reject);
   });
 }
+// Загрузка изображения (фон карты) в Telegram → file_id.
+function tgSendPhoto(chatId, buf, mime) {
+  return new Promise((resolve, reject) => {
+    const boundary = '----lu' + crypto.randomBytes(8).toString('hex');
+    const ct = /^image\//.test(mime || '') ? mime : 'image/jpeg';
+    const ext = ct.indexOf('png') >= 0 ? 'png' : 'jpg';
+    const pre = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="map.${ext}"\r\nContent-Type: ${ct}\r\n\r\n`, 'utf8');
+    const post = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+    const body = Buffer.concat([pre, buf, post]);
+    const req = https.request('https://api.telegram.org/bot' + BOT_TOKEN + '/sendPhoto', {
+      method: 'POST', headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary, 'Content-Length': body.length }
+    }, resp => {
+      let b = ''; resp.on('data', c => b += c);
+      resp.on('end', () => {
+        try {
+          const j = JSON.parse(b);
+          if (j.ok) { const a = j.result.photo; resolve(a && a.length && a[a.length - 1].file_id); }
+          else reject(new Error(j.description || 'sendPhoto failed'));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+}
 // Раскидка из submission в формат клиента.
 function subToLineup(rec, meId) {
   return Object.assign({ id: rec.id }, rec.lineup, {
@@ -259,9 +289,10 @@ const server = http.createServer(async (req, res) => {
       .filter(s => s.status === 'approved' || (user && s.ownerId === user.id))
       .sort((a, b) => b.createdAt - a.createdAt)
       .map(s => subToLineup(s, user ? user.id : null));
+    const maps = db.maps ? Object.keys(db.maps).reduce((o, k) => { o[k] = true; return o; }, {}) : {};
     json(res, 200, {
       user: user ? { id: user.id, name: authName(user) } : null,
-      saved: rec.saved, visited: rec.visited, community
+      saved: rec.saved, visited: rec.visited, community, maps, admin: isAdmin(user)
     });
     return;
   }
@@ -344,6 +375,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- фон карты: загрузка (владелец) ----
+  if (p === '/api/mapimg' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!BOT_TOKEN) { json(res, 503, { error: 'no bot token' }); return; }
+    if (!isAdmin(user)) { json(res, 403, { error: 'not admin' }); return; }
+    const map = u.searchParams.get('map') || '';
+    if (!MAPS.includes(map)) { json(res, 400, { error: 'bad map' }); return; }
+    let buf; try { buf = await readBodyRaw(req, 12 * 1024 * 1024); } catch (e) { json(res, 413, { error: 'too large (max 12MB)' }); return; }
+    if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
+    const chatId = STORAGE_CHAT_ID || (user && user.id);
+    if (!chatId) { json(res, 500, { error: 'no storage chat' }); return; }
+    try {
+      const fid = await tgSendPhoto(chatId, buf, req.headers['content-type']);
+      if (!fid) { json(res, 502, { error: 'send failed' }); return; }
+      if (!db.maps) db.maps = {};
+      db.maps[map] = fid; persist();
+      json(res, 200, { ok: true, map });
+    } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+    return;
+  }
+
+  // ---- фон карты: отдача (публично, прокси из Telegram) ----
+  if (p === '/api/mapimg' && req.method === 'GET') {
+    const map = u.searchParams.get('map') || '';
+    const fid = db.maps && db.maps[map];
+    if (!BOT_TOKEN || !fid) { res.writeHead(404, { 'Access-Control-Allow-Origin': '*' }); res.end('no map'); return; }
+    let gf; try { gf = await tgCall('getFile', { file_id: fid }); } catch (e) { gf = null; }
+    if (!gf || !gf.ok || !gf.result.file_path) { res.writeHead(404); res.end('no file'); return; }
+    https.get('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path, tr => {
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
+      tr.pipe(res);
+    }).on('error', () => { res.writeHead(502); res.end('upstream'); });
+    return;
+  }
+
   // ---- одиночная раскидка для deep-link (публично) ----
   if (p === '/api/lineup' && req.method === 'GET') {
     const id = u.searchParams.get('id') || '';
@@ -357,6 +424,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 loadDb().then(() => {
+  if (!db.maps) db.maps = {};
   server.listen(PORT, () => {
     console.log(`Lineups server on :${PORT}`);
     console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);

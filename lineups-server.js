@@ -154,7 +154,7 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
-const MAPS = ['sandstone', 'province', 'rust', 'zone9', 'sakura', 'dune', 'village'];
+const MAPS = ['sandstone', 'province', 'rust', 'breeze', 'dune', 'hanami', 'prison'];
 const TYPES = ['smoke', 'flash', 'molotov'];
 // Санитизация предложенной раскидки.
 function cleanLineup(l) {

@@ -464,6 +464,7 @@ function render(){
   if(v==='create') return renderCreate();
   if(v==='admin') return renderAdmin();
   if(v==='editprofile') return renderEditProfile();
+  if(v==='settings') return renderSettings();
 }
 function renderEditProfile(){
   statusColor('var(--muted)');
@@ -544,7 +545,7 @@ function renderAdmin(){
   }
   stage.innerHTML=`<div class="view active">
     <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
-      <button class="press" onclick="ADMIN_STATS=null;go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
+      <button class="press" onclick="ADMIN_STATS=null;go('settings')" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
       <div class="eyebrow" style="margin-left:12px">АДМИН</div>
       <button class="press" onclick="ADMIN_STATS=null;renderAdmin()" style="margin-left:auto;font:600 9.5px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ОБНОВИТЬ</button>
     </div>
@@ -897,13 +898,13 @@ function playIcon(){ return state.detailPlaying
 window.togglePlay=function(){ state.detailPlaying=!state.detailPlaying; haptic('soft'); const v=document.getElementById('detailVideo'); if(v){ if(state.detailPlaying)v.play().catch(()=>{}); else v.pause(); } const b=document.getElementById('playBtn'); if(b){ b.innerHTML=playIcon(); b.style.opacity=state.detailPlaying?'.5':'1'; } };
 window.cycleSpeed=function(){ const s=[0.5,1,1.5]; state.detailSpeed=s[(s.indexOf(state.detailSpeed)+1)%s.length]; haptic('sel'); const v=document.getElementById('detailVideo'); if(v)v.playbackRate=state.detailSpeed; const l=LINEUPS.find(x=>x.id===state.detailId); const p=document.getElementById('spdPill'); if(p&&l)p.textContent=`${state.detailSpeed}× · ${l.dur}`; };
 function saveBtnInner(l){ return l.saved? `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранено` : `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранить`; }
-window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('list',{tab:'list'}); else if(f==='feed')go('feed',{tab:'feed'}); else if(f==='author')go('author'); else go('map',{tab:'map'}); };
+window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('list',{tab:'list'}); else if(f==='feed')go('feed',{tab:'feed'}); else if(f==='saved')go('profile',{tab:'profile',profTab:'saved'}); else if(f==='profile-mine'||f==='author'||f==='profile')go('profile',{tab:'profile',profTab:'mine'}); else go('map',{tab:'map'}); };
 window.stepDetail=function(d){ const list=(state.detailFrom==='list')?filteredForList():typeLineups(); const i=list.findIndex(x=>x.id===state.detailId); let ni=i+d; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; if(list[ni]){ state.detailId=list[ni].id; if(state.detailFrom==='map'){state.sel=ni;} renderDetail(); haptic('sel'); } };
 window.viewOnMap=function(id){ const l=LINEUPS.find(x=>x.id===id); state.map=l.map;state.side=l.side;state.type=l.type; const list=typeLineups(); state.sel=Math.max(0,list.findIndex(x=>x.id===id)); go('map',{tab:'map'}); };
 window.toggleSave=function(id){ const l=LINEUPS.find(x=>x.id===id); l.saved=!l.saved; persist(); if(SERVER_OK)api('/api/save',{id,on:l.saved}).catch(()=>{}); haptic(l.saved?'success':'soft'); const b=document.getElementById('saveBtn'); if(b){ b.style.background=l.saved?'var(--accent)':'var(--text)'; b.innerHTML=saveBtnInner(l);} if(state.view==='list')renderList(); toast(l.saved?'Сохранено в SAVED':'Удалено из SAVED'); };
 window.shareLineup=function(id){ const l=LINEUPS.find(x=>x.id===id); haptic('soft'); const bot=CFG.botUsername||'lineups', app=CFG.appName; const link='https://t.me/'+bot+(app?'/'+app:'')+'?startapp='+id; if(TG&&TG.openTelegramLink){ try{ TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent('Раскидка: '+l.title)); return; }catch(e){} } toast('Ссылка на раскидку скопирована'); };
 window.deleteLineup=function(id){
-  const doDel=()=>{ const after=()=>{ const i=LINEUPS.findIndex(x=>x.id===id); if(i>=0)LINEUPS.splice(i,1); haptic('soft'); toast('Раскидка удалена'); if(state.view==='detail')go('author'); else if(state.view==='author')renderAuthor(); else if(state.view==='list')renderList(); else if(state.view==='map')renderMap(); };
+  const doDel=()=>{ const after=()=>{ const i=LINEUPS.findIndex(x=>x.id===id); if(i>=0)LINEUPS.splice(i,1); haptic('soft'); toast('Раскидка удалена'); if(state.view==='detail')go('profile',{tab:'profile',profTab:'mine'}); else if(state.view==='profile')renderProfile(); else if(state.view==='list')renderList(); else if(state.view==='map')renderMap(); };
     if(SERVER_OK){ api('/api/delete',{id}).then(after).catch(e=>toast(e===403?'Можно удалять только свои':'Не удалось удалить')); } else after(); };
   if(TG&&TG.showConfirm){ TG.showConfirm('Удалить раскидку? Это навсегда.',ok=>{ if(ok)doDel(); }); }
   else if(confirm('Удалить раскидку? Это навсегда.')){ doDel(); }
@@ -1027,21 +1028,60 @@ function emptyState(icon,title,text,cta,fn){
 }
 
 /* ===== PROFILE (Ещё) ===== */
+function mineCardHTML(l){
+  return `<div class="list-card" style="align-items:center">
+    <button class="press" onclick="openDetail('${l.id}','profile-mine')" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;text-align:left;background:none">
+      <span class="th">${videoSrc(l)?`<video src="${videoSrc(l)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:`<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>`}</span>
+      <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':(l.type==='molotov'?'molotov':'smoke')}">${l.type.toUpperCase()}</span><span class="tag neutral">${MAPS[l.map]?MAPS[l.map].name:esc(l.map)}</span>${videoSrc(l)?'<span class="tag neutral">ВИДЕО</span>':''}</span></span>
+    </button>
+    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;align-self:center">${l.pending?'<span style="font:600 8.5px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕР.</span>':'<span style="font:600 8.5px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}<button class="press" onclick="deleteLineup('${l.id}')" style="width:30px;height:30px;border-radius:9px;background:rgba(224,119,106,.12);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#e0776a" stroke-width="1.5"><path d="M4 6h12M8 6V4.5h4V6M6.5 6l.8 10h5.4l.8-10"/></svg></button></span>
+  </div>`;
+}
 function renderProfile(){
   statusColor('var(--muted)');
-  const saved=LINEUPS.filter(l=>l.saved).length;
+  const savedList=LINEUPS.filter(l=>l.saved);
+  const mineList=LINEUPS.filter(l=>l.auth===0||l.mine).slice().reverse();
   const visited=LINEUPS.filter(l=>l.visited).length;
+  const tab=state.profTab==='mine'?'mine':'saved';
+  let list;
+  if(tab==='saved') list = savedList.length ? savedList.map(l=>listCardHTML(l,'saved')).join('') : emptyState('save','Пока ничего не сохранено','Нажми закладку на раскидке — она появится здесь.','Открыть ленту',"go('feed',{tab:'feed'})");
+  else list = mineList.length ? mineList.map(l=>mineCardHTML(l)).join('') : emptyState('plus','Пока нет раскидок','Загрузи первую раскидку с видео.','Создать','startCreate()');
+  stage.innerHTML=`
+  <div class="view active">
+    <div style="padding:6px 20px 0;display:flex;align-items:center;justify-content:space-between;flex:none">
+      <div class="eyebrow">ПРОФИЛЬ</div>
+      <button class="press" onclick="go('settings')" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.4"><circle cx="10" cy="10" r="2.7"/><path d="M10 3.2v2.2M10 14.6v2.2M3.2 10h2.2M14.6 10h2.2M5.2 5.2l1.6 1.6M13.2 13.2l1.6 1.6M14.8 5.2l-1.6 1.6M6.8 13.2 5.2 14.8"/></svg></button>
+    </div>
+    <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
+      <button class="press" onclick="go('editprofile')" style="width:100%;text-align:left;display:flex;align-items:center;gap:14px;background:none">
+        <div class="prof-av" style="overflow:hidden;width:60px;height:60px;flex:none">${MY_AVATAR?`<img src="${MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:myInitial()}</div>
+        <div style="flex:1;min-width:0"><div style="font:700 21px/1 var(--font);letter-spacing:-.025em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displayName())}</div>${MY_BIO?`<div style="font:400 11.5px/1.35 var(--font);color:var(--muted2);margin-top:6px">${esc(MY_BIO)}</div>`:'<div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">НАЖМИ, ЧТОБЫ РЕДАКТИРОВАТЬ</div>'}</div>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg>
+      </button>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <div class="stat" style="flex:1"><b>${savedList.length}</b><span>СОХРАНЕНО</span></div>
+        <div class="stat" style="flex:1"><b>${mineList.length}</b><span>МОИ</span></div>
+        <div class="stat" style="flex:1"><b>${visited}</b><span>ИЗУЧЕНО</span></div>
+      </div>
+      <div class="seg" style="margin-top:16px"><button class="${tab==='saved'?'on':''}" onclick="state.profTab='saved';renderProfile()">Сохранённые</button><button class="${tab==='mine'?'on':''}" onclick="state.profTab='mine';renderProfile()">Мои · ${mineList.length}</button></div>
+      <div style="margin-top:6px">${list}</div>
+    </div>
+    ${navbar('profile')}
+  </div>`;
+}
+function renderSettings(){
+  statusColor('var(--muted)');
   const role = !SERVER_OK ? 'ОФЛАЙН' : (IS_ADMIN ? 'ВЛАДЕЛЕЦ' : 'ПОЛЬЗОВАТЕЛЬ');
   stage.innerHTML=`
   <div class="view active">
-    <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
-      <div class="prof-head">
-        <div class="prof-av" style="overflow:hidden">${MY_AVATAR?`<img src="${MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:myInitial()}</div>
-        <div style="flex:1;min-width:0"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displayName())}</div>${MY_BIO?`<div style="font:400 11px/1.35 var(--font);color:var(--muted2);margin-top:5px">${esc(MY_BIO)}</div>`:''}<div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
-        <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
-      </div>
-      <button class="press" onclick="go('editprofile')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;flex:none"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.5"><path d="M4 13.5V16h2.5l8-8L12 5.5z"/><path d="M11 6.5 13.5 9"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Редактировать профиль</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">АВАТАР · НИК · БИО</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>
-      ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · АКТИВНОСТЬ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
+    <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
+      <button class="press" onclick="go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
+      <div class="eyebrow" style="margin-left:12px">НАСТРОЙКИ</div>
+    </div>
+    <div class="scroll pad" style="padding-top:14px;padding-bottom:20px">
+      <div style="font:700 24px/1 var(--font);letter-spacing:-.035em">Настройки</div>
+      <button class="press" onclick="go('editprofile')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:16px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;flex:none"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.5"><path d="M4 13.5V16h2.5l8-8L12 5.5z"/><path d="M11 6.5 13.5 9"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Редактировать профиль</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">АВАТАР · НИК · БИО</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>
+      ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · МОДЕРАЦИЯ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
       <div class="prem">
         <div style="display:flex;align-items:center;justify-content:space-between"><div style="font:700 15px/1 var(--font);letter-spacing:-.02em">Premium</div><span class="tag smoke">СКОРО</span></div>
         <p style="font:400 12px/1.5 var(--font);color:#A8AFB5;margin-top:9px">Коллекции, командные подборки, расширенные фильтры.</p>
@@ -1062,9 +1102,8 @@ function renderProfile(){
       <div class="set-row"><span class="k">Язык</span><span class="v">Русский</span></div>
       <div class="set-row"><span class="k">Автоплей раскидки</span><button class="toggle ${PREFS.autoplay!==false?'on':''} press" onclick="toggleAutoplay(this)"><i></i></button></div>
       <div class="set-row"><span class="k">Качество видео</span><span class="v">Авто</span></div>
-      <div style="text-align:center;font:600 9px/1.6 var(--mono);color:#3E444A;letter-spacing:.1em;margin-top:26px">V 0.4.1 · TELEGRAM MINI APP</div>
+      <div style="text-align:center;font:600 9px/1.6 var(--mono);color:#3E444A;letter-spacing:.1em;margin-top:26px">${esc(role)} · V 0.4.1 · TELEGRAM MINI APP</div>
     </div>
-    ${navbar('profile')}
   </div>`;
 }
 window.openTgChannel=function(){ haptic('soft'); if(TG&&TG.openTelegramLink){try{TG.openTelegramLink('https://t.me/lineups');return;}catch(e){}} toast('Открываем @lineups'); };
@@ -1213,7 +1252,7 @@ window.mapTap=function(e){ const el=document.getElementById('createMap'); if(!el
 window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>32*1024*1024){ toast('Видео больше 32 МБ'); input.value=''; return; } createVideo=f; haptic('sel');
   try{ const uu=URL.createObjectURL(f); const v=document.createElement('video'); v.preload='metadata'; v.onloadedmetadata=function(){ if(v.duration&&isFinite(v.duration)){ const s=Math.min(99*60,Math.round(v.duration)); createDur=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); if(state.view==='create'&&state.createStep===2)renderCreate(); } URL.revokeObjectURL(uu); }; v.src=uu; }catch(e){}
   renderCreate(); };
-window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('author'); };
+window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('profile',{tab:'profile',profTab:'mine'}); };
 window.createNext=function(){ state.createStep++; renderCreate(); haptic('sel'); };
 window.pickOne=function(grp,el){ document.getElementById(grp).querySelectorAll('.chip').forEach(c=>{c.classList.remove('acc-on','on'); c.classList.add('chip');}); const acc=grp==='cType'; el.classList.add(acc?'acc-on':'on'); haptic('sel'); };
 function selChip(grp){ const g=document.getElementById(grp); if(!g)return''; const on=g.querySelector('.acc-on,.on'); return on?on.textContent.trim():''; }
@@ -1230,7 +1269,7 @@ window.publishLineup=function(){
   const toP={x:createTo?createTo.x:120,y:createTo?createTo.y:140,n:(createToN.trim()||'Куда')};
   const proceed=(videoId,videoUrl)=>{
     const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||''};
-    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('author'),800); };
+    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('profile',{tab:'profile',profTab:'mine'}),800); };
     const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; nl.authorName=displayName(); if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
@@ -1244,13 +1283,15 @@ window.publishLineup=function(){
 
 /* ===== navbar ===== */
 function navbar(active){
-  const items=[['map','map','КАРТА'],['feed','feed','ЛЕНТА'],['list','save','SAVED'],['profile','more','ЕЩЁ']];
-  return `<div class="navbar ${active==='feed'?'feed':''}">${items.map(it=>`
-    <button class="nav-item ${active===it[0]?'on':''} press" onclick="tabTo('${it[0]}')">
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke-width="1.5">${IC[it[1]]}</svg><span>${it[2]}</span>
-    </button>`).join('')}</div>`;
+  const item=(id,ic,label)=>`<button class="nav-item ${active===id?'on':''} press" onclick="tabTo('${id}')"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke-width="1.5">${IC[ic]}</svg><span>${label}</span></button>`;
+  return `<div class="navbar ${active==='feed'?'feed':''}">
+    ${item('map','map','КАРТА')}
+    ${item('feed','feed','ЛЕНТА')}
+    <button class="nav-item press" onclick="startCreate()"><span style="width:42px;height:28px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#0A0B0C" stroke-width="2.4">${IC.plus}</svg></span><span style="letter-spacing:.1em">СОЗДАТЬ</span></button>
+    ${item('profile','more','ПРОФИЛЬ')}
+  </div>`;
 }
-window.tabTo=function(t){ if(t==='list'){ go('list',{tab:'list',listTab:'saved'}); return; } if(t==='map'){ go('map',{tab:'map'}); return; } go(t,{tab:t}); };
+window.tabTo=function(t){ if(t==='map'){ go('map',{tab:'map'}); return; } go(t,{tab:t}); };
 
 /* ===== sheet plumbing ===== */
 let sheetEl=null,scrimEl=null;
@@ -1279,8 +1320,8 @@ let toastEl=null,toastT=null;
 function toast(msg){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.className='toast'; document.getElementById('app').appendChild(toastEl);} toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1900); }
 
 /* ===== Telegram BackButton ===== */
-function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin','editprofile'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
-try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='author'||state.view==='admin'||state.view==='editprofile')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
+function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin','editprofile','settings'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
+try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='admin')go('settings'); else if(state.view==='author'||state.view==='editprofile'||state.view==='settings')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
 const _render=render;
 render=function(){ _render(); syncBack(); };
 

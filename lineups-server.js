@@ -263,6 +263,7 @@ function tgSendPhoto(chatId, buf, mime) {
 function subToLineup(rec, meId) {
   return Object.assign({ id: rec.id }, rec.lineup, {
     authorName: rec.authorName,
+    authorAvatar: (db.users[rec.ownerId] && db.users[rec.ownerId].avatar) ? ('/api/avatar?user=' + rec.ownerId) : '',
     mine: meId != null && rec.ownerId === meId,
     pending: rec.status !== 'approved'
   });
@@ -303,6 +304,8 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, {
       user: user ? { id: user.id, name: authName(user) } : null,
       nick: (user && rec.nick) || '',
+      bio: (user && rec.bio) || '',
+      avatar: (user && rec.avatar) ? ('/api/avatar?user=' + user.id) : '',
       saved: rec.saved, visited: rec.visited, community, maps, admin: isAdmin(user)
     });
     return;
@@ -373,18 +376,51 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---- ник автора (произвольный, вместо Telegram-ника) ----
-  if (p === '/api/nick' && req.method === 'POST') {
+  // ---- профиль: ник + био ----
+  if (p === '/api/profile' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);
     if (!user) { json(res, 401, { error: 'auth' }); return; }
     let b; try { b = JSON.parse(await readBody(req)); } catch (e) { b = null; }
-    const nick = String((b && b.nick) || '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 24);
     const rec = userRec(user.id);
-    rec.nick = nick;
-    const display = nick || authName(user);
+    if (b && typeof b.nick === 'string') rec.nick = b.nick.replace(/[\r\n\t]/g, ' ').trim().slice(0, 24);
+    if (b && typeof b.bio === 'string') rec.bio = b.bio.replace(/[\r\n\t]/g, ' ').trim().slice(0, 80);
+    const display = rec.nick || authName(user);
     Object.values(db.subs).forEach(s => { if (s.ownerId === user.id) s.authorName = display; });
     persist();
-    json(res, 200, { nick });
+    json(res, 200, { nick: rec.nick || '', bio: rec.bio || '' });
+    return;
+  }
+
+  // ---- аватар: загрузка (свой) ----
+  if (p === '/api/avatar' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    if (!BOT_TOKEN) { json(res, 503, { error: 'no bot token' }); return; }
+    let buf; try { buf = await readBodyRaw(req, 12 * 1024 * 1024); } catch (e) { json(res, 413, { error: 'too large (max 12MB)' }); return; }
+    if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
+    const chatId = STORAGE_CHAT_ID || (user && user.id);
+    if (!chatId) { json(res, 500, { error: 'no storage chat' }); return; }
+    try {
+      const fid = await tgSendPhoto(chatId, buf, req.headers['content-type']);
+      if (!fid) { json(res, 502, { error: 'send failed' }); return; }
+      userRec(user.id).avatar = fid; persist();
+      json(res, 200, { ok: true });
+    } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+    return;
+  }
+
+  // ---- аватар: отдача (публично, прокси из Telegram) ----
+  if (p === '/api/avatar' && req.method === 'GET') {
+    const uid = u.searchParams.get('user') || '';
+    const rec = db.users[uid];
+    const fid = rec && rec.avatar;
+    if (!BOT_TOKEN || !fid) { res.writeHead(404, { 'Access-Control-Allow-Origin': '*' }); res.end('no avatar'); return; }
+    let gf; try { gf = await tgCall('getFile', { file_id: fid }); } catch (e) { gf = null; }
+    if (!gf || !gf.ok || !gf.result.file_path) { res.writeHead(404); res.end('no file'); return; }
+    https.get('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path, tr => {
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
+      tr.pipe(res);
+    }).on('error', () => { res.writeHead(502); res.end('upstream'); });
     return;
   }
 

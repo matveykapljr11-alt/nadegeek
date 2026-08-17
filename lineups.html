@@ -250,7 +250,7 @@ const CFG = window.LINEUPS_CONFIG || {enabled:false};
 const START_PARAM = (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param) || '';
 const ME = (TG && TG.initDataUnsafe && TG.initDataUnsafe.user) || null;
 function myHandle(){ return ME ? (ME.username ? '@'+ME.username : (ME.first_name||'Игрок')) : '@you'; }
-let MY_NICK=''; try{ MY_NICK=localStorage.getItem('lu_nick')||''; }catch(e){}
+let MY_NICK='', MY_BIO='', MY_AVATAR=''; try{ MY_NICK=localStorage.getItem('lu_nick')||''; }catch(e){}
 function displayName(){ return MY_NICK||myHandle(); }
 function myInitial(){ const h=displayName().replace('@','').trim(); return (h[0]||'U').toUpperCase(); }
 let SERVER_OK=false, startHandled=false, SYNC_ERR='';
@@ -463,6 +463,33 @@ function render(){
   if(v==='detail') return renderDetail();
   if(v==='create') return renderCreate();
   if(v==='admin') return renderAdmin();
+  if(v==='editprofile') return renderEditProfile();
+}
+function renderEditProfile(){
+  statusColor('var(--muted)');
+  stage.innerHTML=`<div class="view active">
+    <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
+      <button class="press" onclick="go('profile',{tab:'profile'})" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
+      <div class="eyebrow" style="margin-left:12px">РЕДАКТИРОВАНИЕ</div>
+    </div>
+    <div class="scroll pad" style="padding-top:16px;padding-bottom:20px">
+      <div style="font:700 24px/1 var(--font);letter-spacing:-.035em">Профиль</div>
+      <input id="epAvatarInput" type="file" accept="image/*" style="display:none" onchange="onAvatarPick(this)">
+      <div style="display:flex;flex-direction:column;align-items:center;margin-top:20px">
+        <button class="press" onclick="document.getElementById('epAvatarInput').click()" style="width:96px;height:96px;border-radius:28px;background:linear-gradient(135deg,#2a2320,#161819);border:1px solid var(--line);overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center">
+          ${MY_AVATAR?`<img src="${MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:`<span style="font:700 34px/1 var(--font);color:var(--accent2)">${myInitial()}</span>`}
+          <span style="position:absolute;right:-2px;bottom:-2px;width:32px;height:32px;border-radius:50%;background:var(--accent);border:3px solid var(--bg);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#0A0B0C" stroke-width="1.8"><rect x="3.5" y="5.5" width="13" height="10" rx="2.5"/><circle cx="10" cy="10.5" r="2.6"/><path d="M7 5.5 8 3.5h4l1 2"/></svg></span>
+        </button>
+        <button class="press" onclick="document.getElementById('epAvatarInput').click()" style="margin-top:10px;font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em">ИЗМЕНИТЬ ФОТО</button>
+      </div>
+      <div class="eyebrow" style="margin-top:22px">НИК АВТОРА</div>
+      <input id="epNick" maxlength="24" value="${esc(MY_NICK)}" placeholder="${esc(myHandle())}" style="width:100%;margin-top:10px;background:#16191B;border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--text);font:600 14px/1 var(--font);outline:none">
+      <div style="font:400 10.5px/1.4 var(--font);color:var(--muted2);margin-top:8px">Виден под раскидками. Твой Telegram-ник никому не показывается. Пусто — будет ${esc(myHandle())}.</div>
+      <div class="eyebrow" style="margin-top:20px">О СЕБЕ · НЕОБЯЗАТЕЛЬНО</div>
+      <textarea id="epBio" rows="2" maxlength="80" placeholder="Например: смоки на Sandstone и Province" style="width:100%;margin-top:10px;background:#16191B;border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--text);font:500 13px/1.4 var(--font);outline:none;resize:none">${esc(MY_BIO)}</textarea>
+    </div>
+    <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-accent press" onclick="saveProfile()">Сохранить</button></div>
+  </div>`;
 }
 let ADMIN_STATS=null, ADMIN_LOADING=false;
 function fetchStats(){ ADMIN_LOADING=true; api('/api/stats').then(d=>{ ADMIN_STATS=d; ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }).catch(()=>{ ADMIN_LOADING=false; if(state.view==='admin')renderAdmin(); }); }
@@ -919,7 +946,7 @@ function renderFeed(){
         <div style="display:flex;gap:6px"><span class="tag solid">${THR_TAG[l.type]}</span><span class="tag line">${MAPS[l.map].name.toUpperCase()} · ${esc(l.zone)}</span></div>
         <h3>${esc(l.title)}</h3>
         <div class="sub"><span>${l.thr.toUpperCase()}</span><i></i><span>${l.dur}</span><i></i><span>${l.diff.toUpperCase()}</span></div>
-        <div class="auth"><div class="av"></div><span>${authorOf(l)}</span></div>
+        <div class="auth"><div class="av" style="overflow:hidden">${(l.authorAvatar||(l.mine&&MY_AVATAR))?`<img src="${l.authorAvatar||MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:''}</div><span>${authorOf(l)}</span></div>
       </div>
       <div class="feed-hint"><svg width="13" height="8" viewBox="0 0 16 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.4"><path d="M1.5 7 8 1.8 14.5 7"/></svg><span>СВАЙП ↑ · СЛЕДУЮЩАЯ</span></div>
     </div>
@@ -1002,18 +1029,11 @@ function renderProfile(){
   <div class="view active">
     <div class="scroll pad" style="padding-top:8px;padding-bottom:16px">
       <div class="prof-head">
-        <div class="prof-av">${myInitial()}</div>
-        <div style="flex:1"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em">${esc(displayName())}</div><div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
+        <div class="prof-av" style="overflow:hidden">${MY_AVATAR?`<img src="${MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:myInitial()}</div>
+        <div style="flex:1;min-width:0"><div style="font:700 18px/1 var(--font);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displayName())}</div>${MY_BIO?`<div style="font:400 11px/1.35 var(--font);color:var(--muted2);margin-top:5px">${esc(MY_BIO)}</div>`:''}<div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;margin-top:7px">${role} · ${saved} SAVED · ${visited} ИЗУЧЕНО</div></div>
         <button class="press" onclick="go('author')" style="padding:9px 12px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font:600 11px/1 var(--font);color:#C3C9CE">Автор →</button>
       </div>
-      <div style="margin-top:14px;padding:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)">
-        <div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.12em">НИК АВТОРА · ВИДЕН ПОД РАСКИДКАМИ</div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <input id="nickInput" maxlength="24" value="${esc(MY_NICK)}" placeholder="${esc(myHandle())}" style="flex:1;min-width:0;background:#16191B;border:1px solid var(--line2);border-radius:11px;padding:11px 12px;color:var(--text);font:600 13px/1 var(--font);outline:none">
-          <button class="press" onclick="saveNick((document.getElementById('nickInput')||{}).value||'')" style="padding:0 16px;border-radius:11px;background:var(--accent);color:#0A0B0C;font:700 12px/1 var(--font)">Сохранить</button>
-        </div>
-        <div style="font:400 10.5px/1.4 var(--font);color:var(--muted2);margin-top:9px">Твой Telegram-ник никому не виден — раскидки подписываются этим ником. Пусто — будет ${esc(myHandle())}.</div>
-      </div>
+      <button class="press" onclick="go('editprofile')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;flex:none"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.5"><path d="M4 13.5V16h2.5l8-8L12 5.5z"/><path d="M11 6.5 13.5 9"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Редактировать профиль</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">АВАТАР · НИК · БИО</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>
       ${IS_ADMIN?`<button class="press" onclick="go('admin')" style="width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:14px;margin-top:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)"><span style="width:38px;height:38px;border-radius:11px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center;flex:none"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.6"><path d="M3 17V9M9 17V4M15 17v-6"/></svg></span><span style="flex:1"><span style="font:600 13px/1 var(--font);color:#D6DADD;display:block">Аналитика</span><span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.08em;display:block;margin-top:6px">ПОЛЬЗОВАТЕЛИ · РАСКИДКИ · АКТИВНОСТЬ</span></span><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5E656B" stroke-width="1.5">${IC.chevR}</svg></button>`:''}
       <div class="prem">
         <div style="display:flex;align-items:center;justify-content:space-between"><div style="font:700 15px/1 var(--font);letter-spacing:-.02em">Premium</div><span class="tag smoke">СКОРО</span></div>
@@ -1042,10 +1062,21 @@ function renderProfile(){
 }
 window.openTgChannel=function(){ haptic('soft'); if(TG&&TG.openTelegramLink){try{TG.openTelegramLink('https://t.me/lineups');return;}catch(e){}} toast('Открываем @lineups'); };
 window.toggleAutoplay=function(el){ PREFS.autoplay=!(PREFS.autoplay!==false); el.classList.toggle('on',PREFS.autoplay); savePrefs(); haptic('sel'); };
-function applyNickLocal(){ LINEUPS.forEach(l=>{ if(l.mine||l.auth===0) l.authorName=displayName(); }); }
-window.saveNick=function(val){ val=(''+val).replace(/[\r\n\t]/g,' ').trim().slice(0,24); const done=()=>{ try{localStorage.setItem('lu_nick',MY_NICK);}catch(e){} applyNickLocal(); haptic('success'); toast(MY_NICK?'Ник сохранён':'Ник сброшен'); renderProfile(); };
-  if(SERVER_OK){ api('/api/nick',{nick:val}).then(d=>{ MY_NICK=(d&&typeof d.nick==='string')?d.nick:val; done(); }).catch(()=>toast('Не удалось сохранить')); }
-  else { MY_NICK=val; done(); } };
+function applyNickLocal(){ LINEUPS.forEach(l=>{ if(l.mine||l.auth===0){ l.authorName=displayName(); if(MY_AVATAR)l.authorAvatar=MY_AVATAR; } }); }
+window.saveProfile=function(){
+  const nick=((document.getElementById('epNick')||{}).value||'').replace(/[\r\n\t]/g,' ').trim().slice(0,24);
+  const bio=((document.getElementById('epBio')||{}).value||'').replace(/[\r\n\t]/g,' ').trim().slice(0,80);
+  const done=()=>{ try{localStorage.setItem('lu_nick',MY_NICK);}catch(e){} applyNickLocal(); haptic('success'); toast('Профиль сохранён'); go('profile',{tab:'profile'}); };
+  if(SERVER_OK){ api('/api/profile',{nick,bio}).then(d=>{ MY_NICK=(d&&typeof d.nick==='string')?d.nick:nick; MY_BIO=(d&&typeof d.bio==='string')?d.bio:bio; done(); }).catch(()=>toast('Не удалось сохранить')); }
+  else { MY_NICK=nick; MY_BIO=bio; done(); }
+};
+window.onAvatarPick=function(input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  if(f.size>12*1024*1024){ toast('Картинка больше 12 МБ'); input.value=''; return; }
+  MY_AVATAR=URL.createObjectURL(f); haptic('sel'); if(state.view==='editprofile')renderEditProfile();
+  if(SERVER_OK){ toast('Загружаем аватар…'); const headers={'Content-Type':f.type||'image/jpeg'}; try{ if(TG&&TG.initData)headers['X-Init-Data']=TG.initData; }catch(e){}
+    fetch((CFG.apiBase||'')+'/api/avatar',{method:'POST',headers,body:f}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(()=>{ MY_AVATAR=(CFG.apiBase||'')+'/api/avatar?user='+(ME?ME.id:'')+'&t='+Date.now(); haptic('success'); toast('Аватар обновлён'); if(state.view==='editprofile')renderEditProfile(); }).catch(()=>toast('Аватар не загрузился')); }
+};
 
 /* ===== AUTHOR ===== */
 function renderAuthor(){
@@ -1241,8 +1272,8 @@ let toastEl=null,toastT=null;
 function toast(msg){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.className='toast'; document.getElementById('app').appendChild(toastEl);} toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1900); }
 
 /* ===== Telegram BackButton ===== */
-function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
-try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='author'||state.view==='admin')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
+function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin','editprofile'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
+try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='author'||state.view==='admin'||state.view==='editprofile')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
 const _render=render;
 render=function(){ _render(); syncBack(); };
 
@@ -1269,6 +1300,8 @@ function syncWithServer(){
       if(d.maps){ Object.keys(d.maps).forEach(k=>{ MAP_IMG[k]=(CFG.apiBase||'')+'/api/mapimg?map='+k; }); }
       IS_ADMIN=!!d.admin;
       if(typeof d.nick==='string'){ MY_NICK=d.nick; try{localStorage.setItem('lu_nick',MY_NICK);}catch(e){} }
+      if(typeof d.bio==='string')MY_BIO=d.bio;
+      if(typeof d.avatar==='string')MY_AVATAR=d.avatar?((CFG.apiBase||'')+d.avatar):'';
       SERVER_OK=true;
       if(state.view==='map'||state.view==='list'||state.view==='feed'||state.view==='profile') render();
     }

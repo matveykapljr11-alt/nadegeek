@@ -851,6 +851,7 @@ function renderDetail(){
         <button class="rounded press" style="background:rgba(255,255,255,.06)" onclick="stepDetail(-1)"><svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.7"><path d="M7.5 2.5 4 6l3.5 3.5"/></svg></button>
         <button class="rounded press" style="background:rgba(255,255,255,.12)" onclick="stepDetail(1)"><svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="1.7"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg></button>
         <button class="rounded press" onclick="shareLineup('${l.id}')"><svg width="14" height="14" viewBox="0 0 20 20" fill="#fff">${IC.save}</svg></button>
+        ${l.mine?`<button class="rounded press" onclick="deleteLineup('${l.id}')"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#e0776a" stroke-width="1.6"><path d="M4 6h12M8 6V4.5h4V6M6.5 6l.8 10h5.4l.8-10"/></svg></button>`:''}
       </div>
     </div>
     <div class="detail-info">
@@ -901,6 +902,12 @@ window.stepDetail=function(d){ const list=(state.detailFrom==='list')?filteredFo
 window.viewOnMap=function(id){ const l=LINEUPS.find(x=>x.id===id); state.map=l.map;state.side=l.side;state.type=l.type; const list=typeLineups(); state.sel=Math.max(0,list.findIndex(x=>x.id===id)); go('map',{tab:'map'}); };
 window.toggleSave=function(id){ const l=LINEUPS.find(x=>x.id===id); l.saved=!l.saved; persist(); if(SERVER_OK)api('/api/save',{id,on:l.saved}).catch(()=>{}); haptic(l.saved?'success':'soft'); const b=document.getElementById('saveBtn'); if(b){ b.style.background=l.saved?'var(--accent)':'var(--text)'; b.innerHTML=saveBtnInner(l);} if(state.view==='list')renderList(); toast(l.saved?'Сохранено в SAVED':'Удалено из SAVED'); };
 window.shareLineup=function(id){ const l=LINEUPS.find(x=>x.id===id); haptic('soft'); const bot=CFG.botUsername||'lineups', app=CFG.appName; const link='https://t.me/'+bot+(app?'/'+app:'')+'?startapp='+id; if(TG&&TG.openTelegramLink){ try{ TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent('Раскидка: '+l.title)); return; }catch(e){} } toast('Ссылка на раскидку скопирована'); };
+window.deleteLineup=function(id){
+  const doDel=()=>{ const after=()=>{ const i=LINEUPS.findIndex(x=>x.id===id); if(i>=0)LINEUPS.splice(i,1); haptic('soft'); toast('Раскидка удалена'); if(state.view==='detail')go('author'); else if(state.view==='author')renderAuthor(); else if(state.view==='list')renderList(); else if(state.view==='map')renderMap(); };
+    if(SERVER_OK){ api('/api/delete',{id}).then(after).catch(e=>toast(e===403?'Можно удалять только свои':'Не удалось удалить')); } else after(); };
+  if(TG&&TG.showConfirm){ TG.showConfirm('Удалить раскидку? Это навсегда.',ok=>{ if(ok)doDel(); }); }
+  else if(confirm('Удалить раскидку? Это навсегда.')){ doDel(); }
+};
 
 /* ===== FEED ===== */
 function feedList(){
@@ -1087,7 +1094,7 @@ function renderAuthor(){
     <div class="list-card" style="align-items:center">
       <span class="th">${videoSrc(l)?`<video src="${videoSrc(l)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:`<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>`}</span>
       <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':'smoke'}">${l.type.toUpperCase()}</span><span class="tag neutral">${MAPS[l.map].name}</span>${videoSrc(l)?'<span class="tag neutral">ВИДЕО</span>':''}</span></span>
-      <span style="text-align:right;flex:none;align-self:center">${l.pending?'<span style="font:600 9px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕРАЦИЯ</span>':'<span style="font:600 9px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}</span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;align-self:center">${l.pending?'<span style="font:600 9px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕРАЦИЯ</span>':'<span style="font:600 9px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}<button class="press" onclick="deleteLineup('${l.id}')" style="width:30px;height:30px;border-radius:9px;background:rgba(224,119,106,.12);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#e0776a" stroke-width="1.5"><path d="M4 6h12M8 6V4.5h4V6M6.5 6l.8 10h5.4l.8-10"/></svg></button></span>
     </div>`).join('') : `<div class="empty" style="min-height:280px"><div style="width:54px;height:54px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#4A5157" stroke-width="1.5">${IC.plus}</svg></div><h3>Пока нет раскидок</h3><p>Загрузи первую раскидку с видео — она появится тут и на карте.</p></div>`;
   stage.innerHTML=`
   <div class="view active">

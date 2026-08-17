@@ -360,6 +360,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- удаление раскидки (владелец раскидки или админ) ----
+  if (p === '/api/delete' && req.method === 'POST') {
+    const user = verifyInitData(req.headers['x-init-data']);
+    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
+    let b; try { b = JSON.parse(await readBody(req)); } catch (e) { b = null; }
+    const rec = b && db.subs[b.id];
+    if (!rec) { json(res, 404, { error: 'not found' }); return; }
+    if (!((user && rec.ownerId === user.id) || isAdmin(user))) { json(res, 403, { error: 'not owner' }); return; }
+    delete db.subs[b.id];
+    persist();
+    json(res, 200, { ok: true });
+    return;
+  }
+
   // ---- модерация раскидок (админ) ----
   if (p === '/api/moderate' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);

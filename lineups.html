@@ -465,6 +465,37 @@ function render(){
   if(v==='admin') return renderAdmin();
   if(v==='editprofile') return renderEditProfile();
   if(v==='settings') return renderSettings();
+  if(v==='user') return renderUser();
+}
+let USER_DATA=null, USER_LOADING=false;
+function openUser(id,from){ id=String(id||''); if(!id||id==='0')return; if(ME&&String(ME.id)===id){ go('profile',{tab:'profile',profTab:'mine'}); return; } USER_DATA=null; state.userBack=from||state.view; state.userBackDetail=(state.view==='detail')?state.detailId:null; go('user',{userId:id}); }
+window.openUser=openUser;
+window.backUser=function(){ if(state.userBack==='detail'&&state.userBackDetail){ openDetail(state.userBackDetail, 'map'); } else if(state.userBack==='feed'){ go('feed',{tab:'feed'}); } else if(state.userBack==='list'){ go('list',{tab:'list'}); } else go('feed',{tab:'feed'}); };
+function fetchUser(id){ USER_LOADING=true; api('/api/user?id='+encodeURIComponent(id)).then(d=>{ USER_DATA=d; USER_LOADING=false; if(state.view==='user')renderUser(); }).catch(()=>{ USER_LOADING=false; if(state.view==='user')renderUser(); }); }
+function renderUser(){
+  statusColor('var(--muted)');
+  const d=USER_DATA, loaded=d&&String(d.id)===String(state.userId);
+  if(!loaded && !USER_LOADING) fetchUser(state.userId);
+  const avatar = loaded && d.avatar ? (CFG.apiBase||'')+d.avatar : '';
+  const name = loaded ? d.name : '…';
+  const bio = loaded ? d.bio : '';
+  const initial = (String(name).replace('@','').trim()[0]||'A').toUpperCase();
+  const list = loaded ? (d.lineups.length ? d.lineups.map(l=>listCardHTML(l,'user')).join('') : '<p style="color:var(--muted2);font:400 12px/1.5 var(--font);padding:24px 0;text-align:center">Пока нет раскидок.</p>') : '<div class="empty" style="min-height:200px"><div class="spin"></div></div>';
+  stage.innerHTML=`<div class="view active">
+    <div style="padding:6px 20px 0;display:flex;align-items:center;flex:none">
+      <button class="press" onclick="backUser()" style="width:34px;height:34px;border-radius:11px;background:var(--surface);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#C3C9CE" stroke-width="1.6">${IC.chevL}</svg></button>
+      <div class="eyebrow" style="margin-left:12px">АВТОР</div>
+    </div>
+    <div class="scroll pad" style="padding-top:14px;padding-bottom:16px">
+      <div style="display:flex;flex-direction:column;align-items:center;text-align:center">
+        <div class="prof-av" style="width:76px;height:76px;border-radius:24px;overflow:hidden">${avatar?`<img src="${avatar}" style="width:100%;height:100%;object-fit:cover">`:initial}</div>
+        <div style="font:700 22px/1 var(--font);letter-spacing:-.025em;margin-top:12px;max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</div>
+        ${bio?`<div style="font:400 12px/1.4 var(--font);color:var(--muted2);margin-top:8px;max-width:280px">${esc(bio)}</div>`:''}
+        <div style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em;margin-top:11px">${loaded?d.lineups.length:0} РАСКИДОК</div>
+      </div>
+      <div style="margin-top:18px">${list}</div>
+    </div>
+  </div>`;
 }
 function renderEditProfile(){
   statusColor('var(--muted)');
@@ -879,7 +910,7 @@ function renderDetail(){
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line2)">
         <span class="tag ${l.type==='flash'?'flash':'smoke'}">${l.thr.toUpperCase()}</span>
         <span style="display:flex;align-items:center;gap:6px;font:600 11.5px/1 var(--font);color:#9AA1A7">${l.diff==='advanced'?'Advanced':'Easy'}<span class="diffbars"><i class="on"></i><i class="${l.diff==='advanced'?'on':''}"></i><i></i></span></span>
-        <span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--dim);letter-spacing:.06em">${authorOf(l)}</span>
+        <button class="press" onclick="openUser('${l.authorId||''}','detail')" style="margin-left:auto;background:none;border:none;font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.06em">${authorOf(l)}</button>
       </div>
     </div>
     <div class="detail-actions">
@@ -898,7 +929,7 @@ function playIcon(){ return state.detailPlaying
 window.togglePlay=function(){ state.detailPlaying=!state.detailPlaying; haptic('soft'); const v=document.getElementById('detailVideo'); if(v){ if(state.detailPlaying)v.play().catch(()=>{}); else v.pause(); } const b=document.getElementById('playBtn'); if(b){ b.innerHTML=playIcon(); b.style.opacity=state.detailPlaying?'.5':'1'; } };
 window.cycleSpeed=function(){ const s=[0.5,1,1.5]; state.detailSpeed=s[(s.indexOf(state.detailSpeed)+1)%s.length]; haptic('sel'); const v=document.getElementById('detailVideo'); if(v)v.playbackRate=state.detailSpeed; const l=LINEUPS.find(x=>x.id===state.detailId); const p=document.getElementById('spdPill'); if(p&&l)p.textContent=`${state.detailSpeed}× · ${l.dur}`; };
 function saveBtnInner(l){ return l.saved? `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранено` : `<svg width="14" height="14" viewBox="0 0 20 20" fill="#0A0B0C">${IC.save}</svg>Сохранить`; }
-window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('list',{tab:'list'}); else if(f==='feed')go('feed',{tab:'feed'}); else if(f==='saved')go('profile',{tab:'profile',profTab:'saved'}); else if(f==='profile-mine'||f==='author'||f==='profile')go('profile',{tab:'profile',profTab:'mine'}); else go('map',{tab:'map'}); };
+window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('list',{tab:'list'}); else if(f==='feed')go('feed',{tab:'feed'}); else if(f==='saved')go('profile',{tab:'profile',profTab:'saved'}); else if(f==='user')go('user',{userId:state.userId}); else if(f==='profile-mine'||f==='author'||f==='profile')go('profile',{tab:'profile',profTab:'mine'}); else go('map',{tab:'map'}); };
 window.stepDetail=function(d){ const list=(state.detailFrom==='list')?filteredForList():typeLineups(); const i=list.findIndex(x=>x.id===state.detailId); let ni=i+d; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; if(list[ni]){ state.detailId=list[ni].id; if(state.detailFrom==='map'){state.sel=ni;} renderDetail(); haptic('sel'); } };
 window.viewOnMap=function(id){ const l=LINEUPS.find(x=>x.id===id); state.map=l.map;state.side=l.side;state.type=l.type; const list=typeLineups(); state.sel=Math.max(0,list.findIndex(x=>x.id===id)); go('map',{tab:'map'}); };
 window.toggleSave=function(id){ const l=LINEUPS.find(x=>x.id===id); l.saved=!l.saved; persist(); if(SERVER_OK)api('/api/save',{id,on:l.saved}).catch(()=>{}); haptic(l.saved?'success':'soft'); const b=document.getElementById('saveBtn'); if(b){ b.style.background=l.saved?'var(--accent)':'var(--text)'; b.innerHTML=saveBtnInner(l);} if(state.view==='list')renderList(); toast(l.saved?'Сохранено в SAVED':'Удалено из SAVED'); };
@@ -954,7 +985,7 @@ function renderFeed(){
         <div style="display:flex;gap:6px"><span class="tag solid">${THR_TAG[l.type]}</span><span class="tag line">${MAPS[l.map].name.toUpperCase()} · ${esc(l.zone)}</span></div>
         <h3>${esc(l.title)}</h3>
         <div class="sub"><span>${l.thr.toUpperCase()}</span><i></i><span>${l.dur}</span><i></i><span>${l.diff.toUpperCase()}</span></div>
-        <div class="auth"><div class="av" style="overflow:hidden">${(l.authorAvatar||(l.mine&&MY_AVATAR))?`<img src="${l.authorAvatar||MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:''}</div><span>${authorOf(l)}</span></div>
+        <button class="auth press" onclick="event.stopPropagation();openUser('${l.authorId||''}','feed')" style="background:none;border:none;padding:0"><div class="av" style="overflow:hidden">${(l.authorAvatar||(l.mine&&MY_AVATAR))?`<img src="${l.authorAvatar||MY_AVATAR}" style="width:100%;height:100%;object-fit:cover">`:''}</div><span>${authorOf(l)}</span></button>
       </div>
       <div class="feed-hint"><svg width="13" height="8" viewBox="0 0 16 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.4"><path d="M1.5 7 8 1.8 14.5 7"/></svg><span>СВАЙП ↑ · СЛЕДУЮЩАЯ</span></div>
     </div>
@@ -1269,7 +1300,7 @@ window.publishLineup=function(){
   const toP={x:createTo?createTo.x:120,y:createTo?createTo.y:140,n:(createToN.trim()||'Куда')};
   const proceed=(videoId,videoUrl)=>{
     const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||''};
-    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('profile',{tab:'profile',profTab:'mine'}),800); };
+    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(ME&&!lin.authorId)lin.authorId=ME.id; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('profile',{tab:'profile',profTab:'mine'}),800); };
     const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; nl.authorName=displayName(); if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
@@ -1320,8 +1351,8 @@ let toastEl=null,toastT=null;
 function toast(msg){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.className='toast'; document.getElementById('app').appendChild(toastEl);} toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1900); }
 
 /* ===== Telegram BackButton ===== */
-function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin','editprofile','settings'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
-try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='admin')go('settings'); else if(state.view==='author'||state.view==='editprofile'||state.view==='settings')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
+function syncBack(){ try{ if(!TG||!TG.BackButton)return; const show=['detail','author','create','admin','editprofile','settings','user'].includes(state.view)||(state.view==='onb1'); if(show)TG.BackButton.show(); else TG.BackButton.hide(); }catch(e){} }
+try{ if(TG&&TG.BackButton){ TG.BackButton.onClick(()=>{ if(!sheetClosed()){closeSheet();return;} if(state.view==='detail')backFromDetail(); else if(state.view==='user')backUser(); else if(state.view==='admin')go('settings'); else if(state.view==='author'||state.view==='editprofile'||state.view==='settings')go('profile',{tab:'profile'}); else if(state.view==='create')createBack(); else if(state.view==='onb1')go('onb0'); }); } }catch(e){}
 const _render=render;
 render=function(){ _render(); syncBack(); };
 

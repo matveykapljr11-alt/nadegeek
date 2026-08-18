@@ -304,6 +304,7 @@ function subToLineup(rec, meId) {
   return Object.assign({ id: rec.id }, rec.lineup, {
     authorName: rec.authorName,
     authorAvatar: (db.users[rec.ownerId] && db.users[rec.ownerId].avatar) ? ('/api/avatar?user=' + rec.ownerId) : '',
+    authorId: rec.ownerId || 0,
     mine: meId != null && rec.ownerId === meId,
     pending: rec.status !== 'approved'
   });
@@ -617,6 +618,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
       tr.pipe(res);
     }).on('error', () => { res.writeHead(502); res.end('upstream'); });
+    return;
+  }
+
+  // ---- публичный профиль автора + его раскидки ----
+  if (p === '/api/user' && req.method === 'GET') {
+    const uid = u.searchParams.get('id') || '';
+    const urec = db.users[uid];
+    const lineups = Object.values(db.subs)
+      .filter(s => String(s.ownerId) === String(uid) && s.status === 'approved')
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(s => subToLineup(s, null));
+    const name = (urec && urec.nick) || (lineups[0] && lineups[0].authorName) || 'Автор';
+    json(res, 200, { id: uid, name, bio: (urec && urec.bio) || '', avatar: (urec && urec.avatar) ? ('/api/avatar?user=' + uid) : '', lineups });
     return;
   }
 

@@ -620,29 +620,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---- временная проверка S3 (без секретов) ----
-  if (p === '/api/_r2test' && req.method === 'GET') {
-    const out = {
-      s3On: S3_ON,
-      has: { endpoint: !!S3_ENDPOINT, host: !!S3_HOST, accessKeyId: !!S3_ACCESS_KEY_ID, secret: !!S3_SECRET_ACCESS_KEY, bucket: !!S3_BUCKET, publicUrl: !!S3_PUBLIC_URL },
-      host: S3_HOST || null, region: S3_REGION, bucket: S3_BUCKET || null, publicUrl: S3_PUBLIC_URL || null
-    };
-    if (S3_ON) {
-      const key = 'test/ping.txt', body = Buffer.from('ok');
-      const opts = s3SignedPutHeaders(key, 'text/plain', body.length);
-      await new Promise(resolve => {
-        const rr = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, rp => {
-          let b = ''; rp.on('data', c => b += c); rp.on('end', () => { out.putStatus = rp.statusCode; if (rp.statusCode >= 300) out.putDetail = b.slice(0, 300); resolve(); });
-        });
-        rr.on('error', e => { out.putErr = String(e.message || e); resolve(); });
-        rr.write(body); rr.end();
-      });
-      out.testUrl = S3_PUBLIC_URL + '/' + key;
-    }
-    json(res, 200, out);
-    return;
-  }
-
   // ---- одиночная раскидка для deep-link (публично) ----
   if (p === '/api/lineup' && req.method === 'GET') {
     const id = u.searchParams.get('id') || '';

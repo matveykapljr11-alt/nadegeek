@@ -313,7 +313,7 @@ function subToLineup(rec, meId) {
 function serveHtml(res) {
   fs.readFile(HTML_FILE, 'utf8', (err, html) => {
     if (err) { res.writeHead(500); res.end('lineups.html not found next to server'); return; }
-    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: S3_ON ? 300 : 20 };
+    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: parseInt(process.env.VIDEO_MAX_MB || '0', 10) || (S3_ON ? 300 : 20) };
     const inject = `\n<script>window.LINEUPS_CONFIG=${JSON.stringify(cfg)};</script>\n`;
     const outHtml = html.includes('</head>') ? html.replace('</head>', inject + '</head>') : inject + html;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });

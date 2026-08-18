@@ -614,6 +614,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- временная проверка R2 (без секретов) ----
+  if (p === '/api/_r2test' && req.method === 'GET') {
+    const out = {
+      r2On: R2_ON,
+      has: { accountId: !!R2_ACCOUNT_ID, accessKeyId: !!R2_ACCESS_KEY_ID, secret: !!R2_SECRET_ACCESS_KEY, bucket: !!R2_BUCKET, publicUrl: !!R2_PUBLIC_URL },
+      bucket: R2_BUCKET || null, publicUrl: R2_PUBLIC_URL || null
+    };
+    if (R2_ON) {
+      const key = 'test/ping.txt', body = Buffer.from('ok');
+      const opts = r2SignedPutHeaders(key, 'text/plain', body.length);
+      await new Promise(resolve => {
+        const rr = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, rp => {
+          let b = ''; rp.on('data', c => b += c); rp.on('end', () => { out.putStatus = rp.statusCode; if (rp.statusCode >= 300) out.putDetail = b.slice(0, 300); resolve(); });
+        });
+        rr.on('error', e => { out.putErr = String(e.message || e); resolve(); });
+        rr.write(body); rr.end();
+      });
+      out.testUrl = R2_PUBLIC_URL + '/' + key;
+    }
+    json(res, 200, out);
+    return;
+  }
+
   // ---- одиночная раскидка для deep-link (публично) ----
   if (p === '/api/lineup' && req.method === 'GET') {
     const id = u.searchParams.get('id') || '';

@@ -65,13 +65,19 @@ const KV_ON = !!(KV_URL && KV_TOKEN);
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 // Cloudflare R2 (S3-совместимое). Если задано — видео хранится там (без лимита 20 МБ Telegram),
 // отдаётся напрямую по публичному URL (Range/стриминг из коробки).
+// Универсальное S3-хранилище видео (Cloudflare R2 / Supabase / Backblaze B2 и т.п.).
+// R2_* — обратная совместимость: если заданы, строим из них S3_ENDPOINT.
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
-const R2_BUCKET = process.env.R2_BUCKET || '';
-const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-const R2_ON = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_URL);
-const MAX_R2_BYTES = 300 * 1024 * 1024;
+const S3_ENDPOINT = (process.env.S3_ENDPOINT || (R2_ACCOUNT_ID ? 'https://' + R2_ACCOUNT_ID + '.r2.cloudflarestorage.com' : '')).replace(/\/$/, '');
+const S3_REGION = process.env.S3_REGION || 'auto';
+const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID || '';
+const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY || '';
+const S3_BUCKET = process.env.S3_BUCKET || process.env.R2_BUCKET || '';
+const S3_PUBLIC_URL = (process.env.S3_PUBLIC_URL || process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+const S3_HOST = (() => { try { return new URL(S3_ENDPOINT).host; } catch (e) { return ''; } })();
+const S3_BASE = (() => { try { return new URL(S3_ENDPOINT).pathname.replace(/\/$/, ''); } catch (e) { return ''; } })();
+const S3_ON = !!(S3_ENDPOINT && S3_HOST && S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY && S3_BUCKET && S3_PUBLIC_URL);
+const MAX_S3_BYTES = 300 * 1024 * 1024;
 
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
@@ -242,13 +248,13 @@ function readBodyRaw(req, max) {
     req.on('error', reject);
   });
 }
-// Подпись AWS SigV4 для PUT в R2 (UNSIGNED-PAYLOAD — тело можно стримить).
-function r2SignedPutHeaders(key, contentType, contentLength) {
-  const host = R2_ACCOUNT_ID + '.r2.cloudflarestorage.com';
-  const canonicalUri = '/' + R2_BUCKET + '/' + key.split('/').map(encodeURIComponent).join('/');
+// Подпись AWS SigV4 для PUT в S3-совместимое хранилище (UNSIGNED-PAYLOAD — тело стримится).
+function s3SignedPutHeaders(key, contentType, contentLength) {
+  const host = S3_HOST;
+  const canonicalUri = S3_BASE + '/' + S3_BUCKET + '/' + key.split('/').map(encodeURIComponent).join('/');
   const amzdate = new Date().toISOString().replace(/[:-]/g, '').replace(/\.\d{3}/, '');
   const datestamp = amzdate.slice(0, 8);
-  const region = 'auto', service = 's3', payloadHash = 'UNSIGNED-PAYLOAD';
+  const region = S3_REGION, service = 's3', payloadHash = 'UNSIGNED-PAYLOAD';
   const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzdate}\n`;
   const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
   const canonicalRequest = ['PUT', canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
@@ -256,12 +262,12 @@ function r2SignedPutHeaders(key, contentType, contentLength) {
   const sha = s => crypto.createHash('sha256').update(s).digest('hex');
   const hmac = (k, s) => crypto.createHmac('sha256', k).update(s).digest();
   const stringToSign = ['AWS4-HMAC-SHA256', amzdate, scope, sha(canonicalRequest)].join('\n');
-  let k = hmac('AWS4' + R2_SECRET_ACCESS_KEY, datestamp);
+  let k = hmac('AWS4' + S3_SECRET_ACCESS_KEY, datestamp);
   k = hmac(k, region); k = hmac(k, service); k = hmac(k, 'aws4_request');
   const signature = crypto.createHmac('sha256', k).update(stringToSign).digest('hex');
   const headers = {
     'Host': host, 'x-amz-date': amzdate, 'x-amz-content-sha256': payloadHash,
-    'Authorization': `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    'Authorization': `AWS4-HMAC-SHA256 Credential=${S3_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     'Content-Type': contentType
   };
   if (contentLength != null) headers['Content-Length'] = contentLength;
@@ -307,7 +313,7 @@ function subToLineup(rec, meId) {
 function serveHtml(res) {
   fs.readFile(HTML_FILE, 'utf8', (err, html) => {
     if (err) { res.writeHead(500); res.end('lineups.html not found next to server'); return; }
-    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: R2_ON ? 300 : 20 };
+    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: S3_ON ? 300 : 20 };
     const inject = `\n<script>window.LINEUPS_CONFIG=${JSON.stringify(cfg)};</script>\n`;
     const outHtml = html.includes('</head>') ? html.replace('</head>', inject + '</head>') : inject + html;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -521,24 +527,24 @@ const server = http.createServer(async (req, res) => {
   // ---- загрузка видео в Telegram (нужен initData + BOT_TOKEN) ----
   if (p === '/api/upload' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);
-    if ((BOT_TOKEN || R2_ON) && !user) { json(res, 401, { error: 'auth' }); return; }
-    // --- R2: стримим прямо в бакет (без лимита 20 МБ) ---
-    if (R2_ON) {
+    if ((BOT_TOKEN || S3_ON) && !user) { json(res, 401, { error: 'auth' }); return; }
+    // --- S3-хранилище: стримим прямо в бакет (без лимита 20 МБ) ---
+    if (S3_ON) {
       const cl = parseInt(req.headers['content-length'] || '0', 10);
-      if (cl > MAX_R2_BYTES) { json(res, 413, { error: 'too large' }); return; }
+      if (cl > MAX_S3_BYTES) { json(res, 413, { error: 'too large' }); return; }
       const key = 'videos/' + genId() + '.mp4';
       const ct = req.headers['content-type'] || 'video/mp4';
-      const opts = r2SignedPutHeaders(key, ct, req.headers['content-length']);
-      const r2req = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, r2res => {
-        let body = ''; r2res.on('data', c => body += c);
-        r2res.on('end', () => {
-          if (r2res.statusCode >= 200 && r2res.statusCode < 300) json(res, 200, { video: R2_PUBLIC_URL + '/' + key });
-          else json(res, 502, { error: 'r2 ' + r2res.statusCode, detail: body.slice(0, 160) });
+      const opts = s3SignedPutHeaders(key, ct, req.headers['content-length']);
+      const s3req = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, s3res => {
+        let body = ''; s3res.on('data', c => body += c);
+        s3res.on('end', () => {
+          if (s3res.statusCode >= 200 && s3res.statusCode < 300) json(res, 200, { video: S3_PUBLIC_URL + '/' + key });
+          else json(res, 502, { error: 's3 ' + s3res.statusCode, detail: body.slice(0, 200) });
         });
       });
-      r2req.on('error', e => { if (!res.headersSent) json(res, 502, { error: String(e.message || e) }); });
-      req.on('error', () => r2req.destroy());
-      req.pipe(r2req);
+      s3req.on('error', e => { if (!res.headersSent) json(res, 502, { error: String(e.message || e) }); });
+      req.on('error', () => s3req.destroy());
+      req.pipe(s3req);
       return;
     }
     // --- Telegram fallback (≤20 МБ) ---
@@ -614,16 +620,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---- временная проверка R2 (без секретов) ----
+  // ---- временная проверка S3 (без секретов) ----
   if (p === '/api/_r2test' && req.method === 'GET') {
     const out = {
-      r2On: R2_ON,
-      has: { accountId: !!R2_ACCOUNT_ID, accessKeyId: !!R2_ACCESS_KEY_ID, secret: !!R2_SECRET_ACCESS_KEY, bucket: !!R2_BUCKET, publicUrl: !!R2_PUBLIC_URL },
-      bucket: R2_BUCKET || null, publicUrl: R2_PUBLIC_URL || null
+      s3On: S3_ON,
+      has: { endpoint: !!S3_ENDPOINT, host: !!S3_HOST, accessKeyId: !!S3_ACCESS_KEY_ID, secret: !!S3_SECRET_ACCESS_KEY, bucket: !!S3_BUCKET, publicUrl: !!S3_PUBLIC_URL },
+      host: S3_HOST || null, region: S3_REGION, bucket: S3_BUCKET || null, publicUrl: S3_PUBLIC_URL || null
     };
-    if (R2_ON) {
+    if (S3_ON) {
       const key = 'test/ping.txt', body = Buffer.from('ok');
-      const opts = r2SignedPutHeaders(key, 'text/plain', body.length);
+      const opts = s3SignedPutHeaders(key, 'text/plain', body.length);
       await new Promise(resolve => {
         const rr = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, rp => {
           let b = ''; rp.on('data', c => b += c); rp.on('end', () => { out.putStatus = rp.statusCode; if (rp.statusCode >= 300) out.putDetail = b.slice(0, 300); resolve(); });
@@ -631,7 +637,7 @@ const server = http.createServer(async (req, res) => {
         rr.on('error', e => { out.putErr = String(e.message || e); resolve(); });
         rr.write(body); rr.end();
       });
-      out.testUrl = R2_PUBLIC_URL + '/' + key;
+      out.testUrl = S3_PUBLIC_URL + '/' + key;
     }
     json(res, 200, out);
     return;
@@ -657,7 +663,7 @@ loadDb().then(() => {
     console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
     console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
     console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация всех' : 'модерация (админы — сразу, остальные в очередь)'}`);
-    console.log(`  video: ${R2_ON ? ('Cloudflare R2 → ' + R2_PUBLIC_URL) : (BOT_TOKEN ? ('Telegram ≤20МБ, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено')}`);
+    console.log(`  video: ${S3_ON ? ('S3 (' + S3_HOST + ') → ' + S3_PUBLIC_URL) : (BOT_TOKEN ? ('Telegram ≤20МБ, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено')}`);
     console.log(`  storage: ${KV_ON ? 'Upstash KV (постоянно)' : 'локальный JSON (ЭФЕМЕРНО на Render free — данные сбрасываются)'}`);
     if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);
   });

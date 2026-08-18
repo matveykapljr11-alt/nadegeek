@@ -63,6 +63,15 @@ const KV_ON = !!(KV_URL && KV_TOKEN);
 // Telegram id владельцев (через запятую), кому можно менять фоны карт.
 // Пусто = разрешено любому авторизованному (MVP; для прода задай свой id).
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+// Cloudflare R2 (S3-совместимое). Если задано — видео хранится там (без лимита 20 МБ Telegram),
+// отдаётся напрямую по публичному URL (Range/стриминг из коробки).
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
+const R2_BUCKET = process.env.R2_BUCKET || '';
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+const R2_ON = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_URL);
+const MAX_R2_BYTES = 300 * 1024 * 1024;
 
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
@@ -185,7 +194,7 @@ function cleanLineup(l) {
     diff: l.diff === 'advanced' ? 'advanced' : 'easy',
     desc: str(l.desc, 140),
     aim: str(l.aim, 60),
-    video: (typeof l.video === 'string' && /^[A-Za-z0-9_-]{10,220}$/.test(l.video)) ? l.video : ''
+    video: (typeof l.video === 'string' && (/^https:\/\/[\w./:?=&%~-]{10,300}$/.test(l.video) || /^[A-Za-z0-9_-]{10,220}$/.test(l.video))) ? l.video : ''
   };
 }
 
@@ -233,6 +242,31 @@ function readBodyRaw(req, max) {
     req.on('error', reject);
   });
 }
+// Подпись AWS SigV4 для PUT в R2 (UNSIGNED-PAYLOAD — тело можно стримить).
+function r2SignedPutHeaders(key, contentType, contentLength) {
+  const host = R2_ACCOUNT_ID + '.r2.cloudflarestorage.com';
+  const canonicalUri = '/' + R2_BUCKET + '/' + key.split('/').map(encodeURIComponent).join('/');
+  const amzdate = new Date().toISOString().replace(/[:-]/g, '').replace(/\.\d{3}/, '');
+  const datestamp = amzdate.slice(0, 8);
+  const region = 'auto', service = 's3', payloadHash = 'UNSIGNED-PAYLOAD';
+  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzdate}\n`;
+  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+  const canonicalRequest = ['PUT', canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const scope = `${datestamp}/${region}/${service}/aws4_request`;
+  const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+  const hmac = (k, s) => crypto.createHmac('sha256', k).update(s).digest();
+  const stringToSign = ['AWS4-HMAC-SHA256', amzdate, scope, sha(canonicalRequest)].join('\n');
+  let k = hmac('AWS4' + R2_SECRET_ACCESS_KEY, datestamp);
+  k = hmac(k, region); k = hmac(k, service); k = hmac(k, 'aws4_request');
+  const signature = crypto.createHmac('sha256', k).update(stringToSign).digest('hex');
+  const headers = {
+    'Host': host, 'x-amz-date': amzdate, 'x-amz-content-sha256': payloadHash,
+    'Authorization': `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    'Content-Type': contentType
+  };
+  if (contentLength != null) headers['Content-Length'] = contentLength;
+  return { host, path: canonicalUri, headers };
+}
 // Загрузка изображения (фон карты) в Telegram → file_id.
 function tgSendPhoto(chatId, buf, mime) {
   return new Promise((resolve, reject) => {
@@ -273,7 +307,7 @@ function subToLineup(rec, meId) {
 function serveHtml(res) {
   fs.readFile(HTML_FILE, 'utf8', (err, html) => {
     if (err) { res.writeHead(500); res.end('lineups.html not found next to server'); return; }
-    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME };
+    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: R2_ON ? 300 : 20 };
     const inject = `\n<script>window.LINEUPS_CONFIG=${JSON.stringify(cfg)};</script>\n`;
     const outHtml = html.includes('</head>') ? html.replace('</head>', inject + '</head>') : inject + html;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -487,9 +521,29 @@ const server = http.createServer(async (req, res) => {
   // ---- загрузка видео в Telegram (нужен initData + BOT_TOKEN) ----
   if (p === '/api/upload' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);
-    if (BOT_TOKEN && !user) { json(res, 401, { error: 'auth' }); return; }
-    if (!BOT_TOKEN) { json(res, 503, { error: 'no bot token' }); return; }
-    let buf; try { buf = await readBodyRaw(req, MAX_VIDEO_BYTES); } catch (e) { json(res, 413, { error: 'too large (max 32MB)' }); return; }
+    if ((BOT_TOKEN || R2_ON) && !user) { json(res, 401, { error: 'auth' }); return; }
+    // --- R2: стримим прямо в бакет (без лимита 20 МБ) ---
+    if (R2_ON) {
+      const cl = parseInt(req.headers['content-length'] || '0', 10);
+      if (cl > MAX_R2_BYTES) { json(res, 413, { error: 'too large' }); return; }
+      const key = 'videos/' + genId() + '.mp4';
+      const ct = req.headers['content-type'] || 'video/mp4';
+      const opts = r2SignedPutHeaders(key, ct, req.headers['content-length']);
+      const r2req = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, r2res => {
+        let body = ''; r2res.on('data', c => body += c);
+        r2res.on('end', () => {
+          if (r2res.statusCode >= 200 && r2res.statusCode < 300) json(res, 200, { video: R2_PUBLIC_URL + '/' + key });
+          else json(res, 502, { error: 'r2 ' + r2res.statusCode, detail: body.slice(0, 160) });
+        });
+      });
+      r2req.on('error', e => { if (!res.headersSent) json(res, 502, { error: String(e.message || e) }); });
+      req.on('error', () => r2req.destroy());
+      req.pipe(r2req);
+      return;
+    }
+    // --- Telegram fallback (≤20 МБ) ---
+    if (!BOT_TOKEN) { json(res, 503, { error: 'no storage' }); return; }
+    let buf; try { buf = await readBodyRaw(req, MAX_VIDEO_BYTES); } catch (e) { json(res, 413, { error: 'too large (max 20MB)' }); return; }
     if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
     const chatId = STORAGE_CHAT_ID || (user && user.id);
     if (!chatId) { json(res, 500, { error: 'no storage chat' }); return; }
@@ -580,7 +634,7 @@ loadDb().then(() => {
     console.log(`  bot: ${BOT_USERNAME || '(BOT_USERNAME не задан)'}  app: ${APP_NAME || '(APP_NAME не задан)'}`);
     console.log(`  auth: ${BOT_TOKEN ? 'строгая (initData проверяется)' : 'DEV (BOT_TOKEN не задан — подпись не проверяется)'}`);
     console.log(`  submissions: ${AUTO_APPROVE ? 'авто-публикация всех' : 'модерация (админы — сразу, остальные в очередь)'}`);
-    console.log(`  video: ${BOT_TOKEN ? ('Telegram, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено (нет BOT_TOKEN)'}`);
+    console.log(`  video: ${R2_ON ? ('Cloudflare R2 → ' + R2_PUBLIC_URL) : (BOT_TOKEN ? ('Telegram ≤20МБ, storage=' + (STORAGE_CHAT_ID || 'чат загрузившего')) : 'выключено')}`);
     console.log(`  storage: ${KV_ON ? 'Upstash KV (постоянно)' : 'локальный JSON (ЭФЕМЕРНО на Render free — данные сбрасываются)'}`);
     if (PUBLIC_URL) console.log(`  public: ${PUBLIC_URL}`);
   });

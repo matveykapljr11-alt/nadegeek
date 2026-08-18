@@ -263,7 +263,7 @@ function api(pathname, body){
 let createVideo=null; // выбранный файл видео в create-флоу
 let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='', createDur='0:06';
 let MAP_IMG={}, IS_ADMIN=false; // фоны карт (URL) + флаг владельца
-function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
+function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return /^https?:\/\//.test(l.video) ? l.video : (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
 function uploadVideo(file){
   const headers={'Content-Type':file.type||'video/mp4'};
   try{ if(TG&&TG.initData) headers['X-Init-Data']=TG.initData; }catch(e){}
@@ -1176,7 +1176,7 @@ function renderCreate(){
       <div class="press" onclick="document.getElementById('cVideoInput').click()" style="margin-top:18px;border-radius:16px;background:#0F1011;border:1.5px dashed rgba(255,255,255,.12);padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;cursor:pointer">
         <div style="width:48px;height:48px;border-radius:14px;background:rgba(255,107,53,.14);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#FF6B35" stroke-width="1.5">${IC.share}</svg></div>
         <div class="btn-primary" style="width:auto;padding:0 18px;height:42px;pointer-events:none">Выбрать видео</div>
-        <span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em">ВЕРТИКАЛЬНОЕ · ДО 20 МБ</span>
+        <span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em">ВЕРТИКАЛЬНОЕ · ДО ${CFG.videoMaxMB||20} МБ</span>
       </div>`}
       <div class="eyebrow" style="margin-top:22px">СКРИНШОТЫ · НЕОБЯЗАТЕЛЬНО</div>
       <div style="display:flex;gap:10px;margin-top:11px">
@@ -1249,7 +1249,7 @@ function renderCreate(){
 window.startCreate=function(){ createVideo=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; createDur='0:06'; go('create',{createStep:0}); };
 window.setCreateMap=function(id){ if(createMap!==id){ createMap=id; createFrom=null; createTo=null; createPlacing='from'; } renderCreate(); haptic('sel'); };
 window.mapTap=function(e){ const el=document.getElementById('createMap'); if(!el)return; const r=el.getBoundingClientRect(); const px=(e.touches?e.touches[0].clientX:e.clientX), py=(e.touches?e.touches[0].clientY:e.clientY); const x=Math.max(8,Math.min(504,(px-r.left)/r.width*512)); const y=Math.max(8,Math.min(504,(py-r.top)/r.height*512)); if(createPlacing==='from'){ createFrom={x,y}; createPlacing='to'; } else { createTo={x,y}; } haptic('sel'); renderCreate(); };
-window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; if(f.size>20*1024*1024){ toast('Видео больше 20 МБ — обрежь короче или снизь качество'); input.value=''; return; } createVideo=f; haptic('sel');
+window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; const maxMB=(CFG.videoMaxMB||20); if(f.size>maxMB*1024*1024){ toast('Видео больше '+maxMB+' МБ'+(maxMB<=20?' — обрежь короче или снизь качество':'')); input.value=''; return; } createVideo=f; haptic('sel');
   try{ const uu=URL.createObjectURL(f); const v=document.createElement('video'); v.preload='metadata'; v.onloadedmetadata=function(){ if(v.duration&&isFinite(v.duration)){ const s=Math.min(99*60,Math.round(v.duration)); createDur=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); if(state.view==='create'&&state.createStep===2)renderCreate(); } URL.revokeObjectURL(uu); }; v.src=uu; }catch(e){}
   renderCreate(); };
 window.createBack=function(){ if(state.createStep>0){ state.createStep--; renderCreate(); } else go('profile',{tab:'profile',profTab:'mine'}); };

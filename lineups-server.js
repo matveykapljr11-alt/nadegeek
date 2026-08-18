@@ -67,7 +67,7 @@ const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).fi
 const DATA_FILE = path.join(__dirname, 'lineups-data.json');
 const HTML_FILE = path.join(__dirname, 'lineups.html');
 const MAX_BODY_BYTES = 16 * 1024;
-const MAX_VIDEO_BYTES = 32 * 1024 * 1024; // 32 МБ (лимит sendVideo у бота — 50 МБ)
+const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // Bot API getFile качает только до 20 МБ — иначе видео не отдать
 
 /* ----------------------------------------------------- storage */
 let db = { users: {}, subs: {}, seq: 1 };
@@ -557,34 +557,6 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
       tr.pipe(res);
     }).on('error', () => { res.writeHead(502); res.end('upstream'); });
-    return;
-  }
-
-  // ---- временная диагностика видео ----
-  if (p === '/api/_vdbg' && req.method === 'GET') {
-    const subs = Object.values(db.subs).filter(s => s.status === 'approved' && s.lineup && s.lineup.video);
-    const out = { approvedWithVideo: subs.length, botToken: !!BOT_TOKEN };
-    const s = subs.sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (s && BOT_TOKEN) {
-      out.id = s.id;
-      try {
-        const gf = await tgCall('getFile', { file_id: s.lineup.video });
-        out.getFileOk = !!(gf && gf.ok);
-        if (gf && gf.ok) {
-          out.ext = (gf.result.file_path || '').split('.').pop();
-          out.fileSize = gf.result.file_size;
-          const fu = new URL('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path);
-          await new Promise(resolve => {
-            https.get({ hostname: fu.hostname, path: fu.pathname, headers: { Range: 'bytes=0-1' } }, r => {
-              out.rangeStatus = r.statusCode; out.acceptRanges = r.headers['accept-ranges'] || null;
-              out.contentRange = r.headers['content-range'] || null; out.upstreamType = r.headers['content-type'] || null;
-              r.resume(); resolve();
-            }).on('error', () => { out.rangeErr = true; resolve(); });
-          });
-        } else { out.getFileErr = gf && gf.description; }
-      } catch (e) { out.err = String(e.message || e); }
-    }
-    json(res, 200, out);
     return;
   }
 

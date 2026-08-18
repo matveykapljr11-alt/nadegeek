@@ -509,8 +509,16 @@ const server = http.createServer(async (req, res) => {
     if (!BOT_TOKEN || !fid) { res.writeHead(404, { 'Access-Control-Allow-Origin': '*' }); res.end('no video'); return; }
     let gf; try { gf = await tgCall('getFile', { file_id: fid }); } catch (e) { gf = null; }
     if (!gf || !gf.ok || !gf.result.file_path) { res.writeHead(404); res.end('no file'); return; }
-    https.get('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path, tr => {
-      res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' });
+    // Проброс Range-запросов к файловому серверу Telegram — обязательно для <video> на iOS,
+    // иначе Safari/Telegram-WebView показывает чёрный экран.
+    const fileUrl = new URL('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path);
+    const reqHeaders = {};
+    if (req.headers['range']) reqHeaders['Range'] = req.headers['range'];
+    https.get({ hostname: fileUrl.hostname, path: fileUrl.pathname + fileUrl.search, headers: reqHeaders }, tr => {
+      const h = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' };
+      if (tr.headers['content-length']) h['Content-Length'] = tr.headers['content-length'];
+      if (tr.headers['content-range']) h['Content-Range'] = tr.headers['content-range'];
+      res.writeHead(tr.statusCode === 206 ? 206 : 200, h);
       tr.pipe(res);
     }).on('error', () => { res.writeHead(502); res.end('upstream'); });
     return;

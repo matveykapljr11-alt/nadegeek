@@ -6,9 +6,10 @@
 <meta name="theme-color" content="#0A0B0C">
 <title>Lineups</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap">
 <style>
-@font-face{font-family:Archivo;src:local('Archivo');}
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap');
 :root{
   --bg:#0A0B0C; --surface:#131517; --surface2:#24282B; --sand:#241F18; --mapbg:#131110;
   --accent:#FF6B35; --accent2:#FF8B5E; --landing:#8FB3CC; --landing2:#A8C6DA;
@@ -1062,7 +1063,7 @@ function emptyState(icon,title,text,cta,fn){
 function mineCardHTML(l){
   return `<div class="list-card" style="align-items:center">
     <button class="press" onclick="openDetail('${l.id}','profile-mine')" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;text-align:left;background:none">
-      <span class="th">${videoSrc(l)?`<video src="${videoSrc(l)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:`<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>`}</span>
+      <span class="th"><svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>${videoSrc(l)?'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="#fff">'+IC.play+'</svg></span>':''}</span>
       <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':(l.type==='molotov'?'molotov':'smoke')}">${l.type.toUpperCase()}</span><span class="tag neutral">${MAPS[l.map]?MAPS[l.map].name:esc(l.map)}</span>${videoSrc(l)?'<span class="tag neutral">ВИДЕО</span>':''}</span></span>
     </button>
     <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;align-self:center">${l.pending?'<span style="font:600 8.5px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕР.</span>':'<span style="font:600 8.5px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}<button class="press" onclick="deleteLineup('${l.id}')" style="width:30px;height:30px;border-radius:9px;background:rgba(224,119,106,.12);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#e0776a" stroke-width="1.5"><path d="M4 6h12M8 6V4.5h4V6M6.5 6l.8 10h5.4l.8-10"/></svg></button></span>
@@ -1162,7 +1163,7 @@ function renderAuthor(){
   const saves=mine.filter(l=>l.saved).length;
   const rows = mine.length ? mine.slice(0,20).map(l=>`
     <div class="list-card" style="align-items:center">
-      <span class="th">${videoSrc(l)?`<video src="${videoSrc(l)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>`:`<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>`}</span>
+      <span class="th"><svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)">${radar(MAPS[l.map].radar)}<circle cx="${l.from.x}" cy="${l.from.y}" r="24" fill="#FF6B35"/></svg>${videoSrc(l)?'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="#fff">'+IC.play+'</svg></span>':''}</span>
       <span class="cc"><h4>${esc(l.title)}</h4><span class="r2"><span class="tag ${l.type==='flash'?'flash':'smoke'}">${l.type.toUpperCase()}</span><span class="tag neutral">${MAPS[l.map].name}</span>${videoSrc(l)?'<span class="tag neutral">ВИДЕО</span>':''}</span></span>
       <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;align-self:center">${l.pending?'<span style="font:600 9px/1 var(--mono);color:#4A5157;letter-spacing:.06em">МОДЕРАЦИЯ</span>':'<span style="font:600 9px/1 var(--mono);color:#4ADE80;letter-spacing:.06em">LIVE</span>'}<button class="press" onclick="deleteLineup('${l.id}')" style="width:30px;height:30px;border-radius:9px;background:rgba(224,119,106,.12);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#e0776a" stroke-width="1.5"><path d="M4 6h12M8 6V4.5h4V6M6.5 6l.8 10h5.4l.8-10"/></svg></button></span>
     </div>`).join('') : `<div class="empty" style="min-height:280px"><div style="width:54px;height:54px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="#4A5157" stroke-width="1.5">${IC.plus}</svg></div><h3>Пока нет раскидок</h3><p>Загрузи первую раскидку с видео — она появится тут и на карте.</p></div>`;

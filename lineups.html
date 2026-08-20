@@ -229,8 +229,8 @@ img{display:block}
 .spin{width:26px;height:26px;border:2.5px solid rgba(255,255,255,.12);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .marker{cursor:pointer}
-.pulse{animation:pl 2.4s ease-out infinite}
-@keyframes pl{0%{r:15;opacity:.5}70%,100%{r:30;opacity:0}}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pl 2.4s ease-out infinite;will-change:transform,opacity}
+@keyframes pl{0%{transform:scale(1);opacity:.5}70%,100%{transform:scale(2);opacity:0}}
 </style>
 </head>
 <body>
@@ -320,14 +320,16 @@ const MAPDEF = {
     L:['M256 68v376','M118 256h280','M256 160h150'],
     R:[[68,70,82,152,3],[160,70,82,152,3,1],[300,80,140,142,3],[68,300,152,142,3,1],[248,300,82,142,3],[350,300,82,142,3,1]]}
 };
+const _radarCache={};
 function radar(kind){
   if(typeof MAP_IMG!=='undefined' && MAP_IMG[kind]) return `<image href="${MAP_IMG[kind]}" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid slice"/>`;
+  if(_radarCache[kind]) return _radarCache[kind];
   const m = MAPDEF[kind] || MAPDEF.sandstone;
   const ln = 'rgba(255,255,255,.05)';
   const paths = (m.L||[]).map(d=>`<path d="${d}" stroke="${m.c}" stroke-width="30" fill="none" stroke-linecap="round"/>`).join('');
   const rects = (m.R||[]).map(a=>`<rect x="${a[0]}" y="${a[1]}" width="${a[2]}" height="${a[3]}" rx="${a[4]!=null?a[4]:6}" fill="${a[5]?m.f2:m.f}" stroke="${ln}" stroke-width="2"/>`).join('');
   const circ = (m.C||[]).map(a=>`<circle cx="${a[0]}" cy="${a[1]}" r="${a[2]}" fill="${a[3]?m.f2:m.f}" stroke="${ln}" stroke-width="2"/>`).join('');
-  return `<rect width="512" height="512" fill="${m.bg}"/><g>${paths}</g>${rects}${circ}`;
+  return (_radarCache[kind] = `<rect width="512" height="512" fill="${m.bg}"/><g>${paths}</g>${rects}${circ}`);
 }
 const MAPS = {
   sandstone:{name:'Sandstone',radar:'sandstone'},
@@ -699,21 +701,19 @@ function renderMap(){
       <div class="legend"><span><i style="border:1.3px solid var(--accent)"></i>ОТКУДА</span><span><i style="background:var(--landing)"></i>КУДА</span></div>
       ${list.length? '' : emptyMap()}
     </div>
-    ${sel? previewCard(sel,list.length) : ''}
+    <div id="previewWrap">${sel? previewCard(sel,list.length) : ''}</div>
     ${navbar('map')}
   </div>`;
   attachMapPan();
 }
-function mapSvg(list,sel){
-  const markers = list.map((l,i)=>{
-    const on = i===state.sel;
-    if(on){
+function markersInner(list,sel){
+  return list.map((l,i)=>{
+    if(i===sel){
       return `<g class="marker" data-i="${i}">
         <path d="M${l.from.x} ${l.from.y}Q${(l.from.x+l.to.x)/2} ${Math.min(l.from.y,l.to.y)-60} ${l.to.x} ${l.to.y}" stroke="url(#arcm)" stroke-width="2" fill="none" stroke-dasharray="1.5 6" stroke-linecap="round"/>
-        <g fill="none" stroke="#8FB3CC" stroke-width="1.6"><path d="M${l.to.x} ${l.to.y-8}v9M${l.to.x} ${l.to.y+8}v9M${l.to.x-9} ${l.to.y}h9M${l.to.x+9} ${l.to.y}h9" transform="translate(0,-8.5) translate(0,0)"/></g>
         <path d="M${l.to.x} ${l.to.y-9}v6M${l.to.x} ${l.to.y+3}v6M${l.to.x-9} ${l.to.y}h6M${l.to.x+3} ${l.to.y}h6" stroke="#8FB3CC" stroke-width="1.6"/>
         <circle cx="${l.to.x}" cy="${l.to.y}" r="6" fill="#8FB3CC"/>
-        <circle class="pulse" cx="${l.from.x}" cy="${l.from.y}" fill="#FF6B35" opacity=".1"/>
+        <circle class="pulse" cx="${l.from.x}" cy="${l.from.y}" r="15" fill="#FF6B35" opacity=".1"/>
         <circle cx="${l.from.x}" cy="${l.from.y}" r="15" fill="#FF6B35" stroke="#0A0B0C" stroke-width="2.5"/>
         <path d="M${l.from.x} ${l.from.y-7}v14M${l.from.x-7} ${l.from.y}h14" stroke="#0A0B0C" stroke-width="2.2" stroke-linecap="round"/>
       </g>`;
@@ -721,14 +721,16 @@ function mapSvg(list,sel){
     const st=l.visited?'#585044':'#8A806C', dt=l.visited?'#6E6656':'#B0A48A';
     return `<g class="marker" data-i="${i}"><circle cx="${l.from.x}" cy="${l.from.y}" r="12" fill="transparent"/><circle cx="${l.from.x}" cy="${l.from.y}" r="9" fill="#0A0B0C" opacity=".5"/><circle cx="${l.from.x}" cy="${l.from.y}" r="9" fill="none" stroke="${st}" stroke-width="1.3"/><circle cx="${l.from.x}" cy="${l.from.y}" r="3.4" fill="${dt}"/></g>`;
   }).join('');
-  const s = list[state.sel];
+}
+function mapSvg(list,sel){
+  const s = list[sel];
   return `
   <svg class="map-svg" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" id="mapSvg">
     <defs><linearGradient id="arcm" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#FF6B35" stop-opacity=".95"/><stop offset="1" stop-color="#FF6B35" stop-opacity=".28"/></linearGradient></defs>
-    <g id="mapG">${radar(MAPS[state.map].radar)}<g style="filter:brightness(.55)">${''}</g>${markers}</g>
+    <g id="mapG">${radar(MAPS[state.map].radar)}<g id="mkG">${markersInner(list,sel)}</g></g>
   </svg>
   <div class="callout" style="left:${s.to.x/512*100}%;top:${s.to.y/512*100}%" id="calloutTo">${esc(s.to.n)}</div>
-  <div class="callout accent" style="left:${s.from.x/512*100}%;top:${s.from.y/512*100}%">${esc(s.from.n)} · ${state.sel+1}</div>`;
+  <div class="callout accent" style="left:${s.from.x/512*100}%;top:${s.from.y/512*100}%" id="calloutFrom">${esc(s.from.n)} · ${sel+1}</div>`;
 }
 function previewCard(l,total){
   return `<div class="preview">
@@ -757,13 +759,24 @@ window.toggleSide=function(){ state.side = state.side==='attack'?'defense':'atta
 let mapZoom=1, mapTX=0, mapTY=0;
 window.zoomMap=function(d){ mapZoom=Math.max(1,Math.min(2.4,mapZoom+d*0.35)); applyMapT(); haptic('sel'); };
 function applyMapT(){ const g=document.getElementById('mapG'); if(g) g.setAttribute('transform',`translate(${mapTX} ${mapTY}) scale(${mapZoom})`); }
-function attachMapPan(){
-  mapZoom=1;mapTX=0;mapTY=0;
+function attachMarkerClicks(){
   const svg=document.getElementById('mapSvg'); if(!svg) return;
   svg.querySelectorAll('.marker').forEach(m=>{
-    m.addEventListener('click',e=>{ e.stopPropagation(); const i=+m.dataset.i; if(i===state.sel){ const l=typeLineups()[i]; openDetail(l.id,'map'); } else { state.sel=i; renderMap(); haptic('sel'); } });
+    m.addEventListener('click',e=>{ e.stopPropagation(); const i=+m.dataset.i; if(i===state.sel){ const l=typeLineups()[i]; if(l)openDetail(l.id,'map'); } else selectMarker(i); });
   });
 }
+// Лёгкое обновление выбора: меняем только маркеры/выноски/превью, не пересобирая радар/весь экран.
+function selectMarker(i){
+  const list=typeLineups(); const l=list[i]; if(!l)return;
+  state.sel=i;
+  const mk=document.getElementById('mkG'); if(mk) mk.innerHTML=markersInner(list,i);
+  const cto=document.getElementById('calloutTo'); if(cto){ cto.style.left=(l.to.x/512*100)+'%'; cto.style.top=(l.to.y/512*100)+'%'; cto.textContent=l.to.n; }
+  const cfr=document.getElementById('calloutFrom'); if(cfr){ cfr.style.left=(l.from.x/512*100)+'%'; cfr.style.top=(l.from.y/512*100)+'%'; cfr.textContent=l.from.n+' · '+(i+1); }
+  const pw=document.getElementById('previewWrap'); if(pw) pw.innerHTML=previewCard(l,list.length);
+  attachMarkerClicks();
+  haptic('sel');
+}
+function attachMapPan(){ mapZoom=1;mapTX=0;mapTY=0; attachMarkerClicks(); }
 
 /* ===== Map picker sheet ===== */
 window.uploadMapImg=function(id,input){

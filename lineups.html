@@ -269,6 +269,16 @@ function imgRefSrc(ref){ if(!ref)return ''; if(ref.indexOf('blob:')===0||/^https
 function uploadImage(file){ const headers={'Content-Type':file.type||'image/jpeg'}; try{ if(TG&&TG.initData)headers['X-Init-Data']=TG.initData;}catch(e){} return fetch((CFG.apiBase||'')+'/api/upload',{method:'POST',headers,body:file}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(d=>d.image); }
 let MAP_IMG={}, IS_ADMIN=false; // фоны карт (URL) + флаг владельца
 function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return /^https?:\/\//.test(l.video) ? l.video : (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
+// Разогрев соединения: заранее DNS+TLS до хоста хранилища, чтобы первое видео пошло быстрее.
+const _warmed={};
+function warmConnection(url){ try{ const h=new URL(url,location.href).origin; if(_warmed[h])return; _warmed[h]=1; ['preconnect','dns-prefetch'].forEach(rel=>{ const lnk=document.createElement('link'); lnk.rel=rel; lnk.href=h; if(rel==='preconnect')lnk.crossOrigin='anonymous'; document.head.appendChild(lnk); }); }catch(e){} }
+// Видео с моментальным постером (карта+дуга) под ним — не чёрный экран, пока клип буферизуется.
+function videoBlock(l,opts){ opts=opts||{}; const src=videoSrc(l); if(!src) return throwSvg(l,{bright:opts.bright||.6}); warmConnection(src);
+  const idAttr=opts.id?`id="${opts.id}"`:''; const auto=opts.autoplay?'autoplay':'';
+  return `<div style="position:absolute;inset:0;background:#000">
+    <div style="position:absolute;inset:0;opacity:.5;pointer-events:none">${throwSvg(l,{bright:opts.bright||.55})}</div>
+    <video ${idAttr} src="${src}" loop muted ${auto} playsinline preload="metadata" onloadeddata="this.style.opacity=1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .22s ease"></video>
+  </div>`; }
 function uploadVideo(file){
   const headers={'Content-Type':file.type||'video/mp4'};
   try{ if(TG&&TG.initData) headers['X-Init-Data']=TG.initData; }catch(e){}
@@ -887,7 +897,7 @@ function renderDetail(){
   stage.innerHTML=`
   <div class="view active">
     <div class="detail-media" id="detailMedia">
-      ${videoSrc(l)? `<video id="detailVideo" src="${videoSrc(l)}" loop muted playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video>` : throwSvg(l,{bright:.62})}
+      ${videoBlock(l,{id:'detailVideo',bright:.62})}
       <div style="position:absolute;left:0;right:0;top:0;height:150px;background:linear-gradient(to bottom,rgba(6,7,8,.8),transparent);pointer-events:none"></div>
       <div style="position:absolute;left:16px;top:96px;display:flex;gap:6px"><span class="tag solid">${THR_TAG[l.type]}</span><span class="tag line">${MAPS[l.map].name.toUpperCase()}</span></div>
       <button class="press" id="spdPill" onclick="cycleSpeed()" style="position:absolute;right:16px;top:104px;padding:6px 10px;border-radius:9px;background:rgba(10,11,12,.62);border:1px solid rgba(255,255,255,.1);font:600 9px/1 var(--mono);letter-spacing:.08em;color:#F5F6F7">${state.detailSpeed}× · ${l.dur}</button>
@@ -993,7 +1003,7 @@ function renderFeed(){
       <div class="feed-track" id="feedTrack">
         <div class="feed-slide" id="feedSlide">
           <div class="feed-media" id="feedMedia">
-            ${videoSrc(l)? `<video id="feedVideo" src="${videoSrc(l)}" loop muted autoplay playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video>` : throwSvg(l,{bright:.6})}
+            ${videoBlock(l,{id:'feedVideo',autoplay:true,bright:.6})}
             <div class="grad-t"></div><div class="grad-b"></div>
           </div>
         </div>
@@ -1432,7 +1442,9 @@ function syncWithServer(){
   if(!CFG.enabled){ SYNC_ERR='config-off'; openStartParam(); return; }
   api('/api/sync',{}).catch(e=>{ SYNC_ERR='sync:'+e; return Promise.reject(e); }).then(d=>{
     if(d){
-      if(Array.isArray(d.community)) d.community.forEach(cl=>{ const ex=LINEUPS.find(x=>x.id===cl.id); if(ex)Object.assign(ex,cl); else { if(cl.mine)cl.auth=0; LINEUPS.push(cl); } });
+      if(Array.isArray(d.community)){ d.community.forEach(cl=>{ const ex=LINEUPS.find(x=>x.id===cl.id); if(ex)Object.assign(ex,cl); else { if(cl.mine)cl.auth=0; LINEUPS.push(cl); } });
+        // разогреваем соединение до хранилища первого видео заранее
+        const fv=LINEUPS.find(l=>videoSrc(l)); if(fv)warmConnection(videoSrc(fv)); }
       if(Array.isArray(d.saved)){ const S=new Set(d.saved); LINEUPS.forEach(l=>l.saved=S.has(l.id)); persist(); }
       if(Array.isArray(d.visited)){ const V=new Set(d.visited); LINEUPS.forEach(l=>{ if(V.has(l.id))l.visited=true; }); persistVisited(); }
       if(d.maps){ Object.keys(d.maps).forEach(k=>{ MAP_IMG[k]=(CFG.apiBase||'')+'/api/mapimg?map='+k; }); }

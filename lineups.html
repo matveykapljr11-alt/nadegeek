@@ -187,7 +187,7 @@ img{display:block}
 /* scroll list view */
 .scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .pad{padding:0 20px}
-.list-card{display:flex;gap:11px;padding:11px;border-radius:16px;background:var(--surface);border:1px solid var(--line);margin-top:10px}
+.list-card{display:flex;gap:11px;padding:11px;border-radius:16px;background:var(--surface);border:1px solid var(--line);margin-top:10px;content-visibility:auto;contain-intrinsic-size:auto 80px}
 .list-card .th{width:44px;height:56px;border-radius:9px;background:#0F1011;border:1px solid rgba(255,255,255,.06);flex:none;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
 .list-card .cc{flex:1;min-width:0;padding-top:1px}
 .list-card .cc h4{font:700 14px/1.2 var(--font);letter-spacing:-.015em}
@@ -1021,7 +1021,8 @@ function attachFeedSwipe(list){
   let wl=0; track.addEventListener('wheel',e=>{ const now=Date.now(); if(now-wl<600)return; if(Math.abs(e.deltaY)>20){ wl=now; feedStep(e.deltaY>0?1:-1,list);} },{passive:true});
   track.addEventListener('click',()=>openDetail(list[state.feedIdx].id,'feed'));
 }
-function feedStep(dir,list){ let ni=state.feedIdx+dir; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; const slide=document.getElementById('feedSlide'); slide.style.transform=`translateY(${dir<0?100:-100}%)`; setTimeout(()=>{ state.feedIdx=ni; renderFeed(); },260); haptic('soft'); }
+let feedBusy=false;
+function feedStep(dir,list){ if(feedBusy)return; feedBusy=true; let ni=state.feedIdx+dir; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; const slide=document.getElementById('feedSlide'); slide.style.transform=`translateY(${dir<0?100:-100}%)`; setTimeout(()=>{ state.feedIdx=ni; renderFeed(); feedBusy=false; },260); haptic('soft'); }
 
 /* ===== LIST view ===== */
 function renderList(){

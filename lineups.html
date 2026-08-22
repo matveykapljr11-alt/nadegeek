@@ -262,7 +262,11 @@ function api(pathname, body){
     .then(r=>r.ok?r.json():Promise.reject(r.status));
 }
 let createVideo=null; // выбранный файл видео в create-флоу
+let createShotStand=null, createShotAim=null; // скриншоты «где встать» / «прицел»
 let createMap='sandstone', createFrom=null, createTo=null, createPlacing='from', createFromN='', createToN='', createDur='0:06';
+// Ссылка на скриншот: локальный blob (превью), https-URL (S3) или tg:<file_id>.
+function imgRefSrc(ref){ if(!ref)return ''; if(ref.indexOf('blob:')===0||/^https?:\/\//.test(ref))return ref; if(ref.indexOf('tg:')===0)return (CFG.apiBase||'')+'/api/photo?id='+encodeURIComponent(ref.slice(3)); return ref; }
+function uploadImage(file){ const headers={'Content-Type':file.type||'image/jpeg'}; try{ if(TG&&TG.initData)headers['X-Init-Data']=TG.initData;}catch(e){} return fetch((CFG.apiBase||'')+'/api/upload',{method:'POST',headers,body:file}).then(r=>r.ok?r.json():Promise.reject(r.status)).then(d=>d.image); }
 let MAP_IMG={}, IS_ADMIN=false; // фоны карт (URL) + флаг владельца
 function videoSrc(l){ if(l.videoUrl) return l.videoUrl; if(l.video) return /^https?:\/\//.test(l.video) ? l.video : (CFG.apiBase||'')+'/api/video?id='+encodeURIComponent(l.id); return null; }
 function uploadVideo(file){
@@ -909,16 +913,20 @@ function renderDetail(){
       </div>
       <p style="font:400 12.5px/1.5 var(--font);color:#B6BCC1;margin-top:13px">${esc(getDesc(l))}</p>
       <div class="steps">
-        <div class="step"><span class="lbl">1 · ВСТАТЬ</span>
-          <svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)"><g transform="translate(${256-l.from.x*1.7} ${256-l.from.y*1.7}) scale(1.7)">${radar(MAPS[l.map].radar)}</g></svg>
-          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)"><svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="13" fill="#FF6B35" opacity=".14"/><circle cx="15" cy="15" r="7" fill="#FF6B35" stroke="#0A0B0C" stroke-width="2"/><path d="M15 11v8M11 15h8" stroke="#0A0B0C" stroke-width="1.8"/></svg></div>
-          <span style="position:absolute;left:9px;bottom:8px;right:9px;font:600 8.5px/1.3 var(--mono);color:#C3C9CE;letter-spacing:.03em">${esc(l.from.n)}</span>
+        <div class="step" ${l.shotStand?`onclick="openShot('${l.id}','stand')" style="cursor:zoom-in"`:''}><span class="lbl">1 · ВСТАТЬ</span>
+          ${l.shotStand
+            ? `<img src="${imgRefSrc(l.shotStand)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" loading="lazy" decoding="async">`
+            : `<svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;filter:brightness(.5)"><g transform="translate(${256-l.from.x*1.7} ${256-l.from.y*1.7}) scale(1.7)">${radar(MAPS[l.map].radar)}</g></svg>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)"><svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="13" fill="#FF6B35" opacity=".14"/><circle cx="15" cy="15" r="7" fill="#FF6B35" stroke="#0A0B0C" stroke-width="2"/><path d="M15 11v8M11 15h8" stroke="#0A0B0C" stroke-width="1.8"/></svg></div>`}
+          <span style="position:absolute;left:9px;bottom:8px;right:9px;font:600 8.5px/1.3 var(--mono);color:#C3C9CE;letter-spacing:.03em;text-shadow:0 1px 3px rgba(0,0,0,.8)">${esc(l.from.n)}</span>
         </div>
-        <div class="step"><span class="lbl">2 · ПРИЦЕЛ</span>
-          <div style="position:absolute;inset:0;background:linear-gradient(#222831,#12161A 60%,#0A0B0C)"></div>
+        <div class="step" ${l.shotAim?`onclick="openShot('${l.id}','aim')" style="cursor:zoom-in"`:''}><span class="lbl">2 · ПРИЦЕЛ</span>
+          ${l.shotAim
+            ? `<img src="${imgRefSrc(l.shotAim)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" loading="lazy" decoding="async">`
+            : `<div style="position:absolute;inset:0;background:linear-gradient(#222831,#12161A 60%,#0A0B0C)"></div>
           <div style="position:absolute;left:0;right:0;top:52%;height:1px;background:rgba(255,255,255,.07)"></div>
-          <div style="position:absolute;left:56%;top:40%;transform:translate(-50%,-50%)"><svg width="42" height="42" viewBox="0 0 42 42" fill="none" stroke="#FF6B35" stroke-width="1.3"><circle cx="21" cy="21" r="13"/><path d="M21 3v9M21 30v9M3 21h9M30 21h9"/><circle cx="21" cy="21" r="2.4" fill="#FF6B35"/></svg></div>
-          <span style="position:absolute;left:9px;bottom:8px;right:9px;font:600 8.5px/1.3 var(--mono);color:#C3C9CE;letter-spacing:.03em">${esc(getAim(l))}</span>
+          <div style="position:absolute;left:56%;top:40%;transform:translate(-50%,-50%)"><svg width="42" height="42" viewBox="0 0 42 42" fill="none" stroke="#FF6B35" stroke-width="1.3"><circle cx="21" cy="21" r="13"/><path d="M21 3v9M21 30v9M3 21h9M30 21h9"/><circle cx="21" cy="21" r="2.4" fill="#FF6B35"/></svg></div>`}
+          <span style="position:absolute;left:9px;bottom:8px;right:9px;font:600 8.5px/1.3 var(--mono);color:#C3C9CE;letter-spacing:.03em;text-shadow:0 1px 3px rgba(0,0,0,.8)">${esc(getAim(l))}</span>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line2)">
@@ -947,6 +955,10 @@ window.backFromDetail=function(){ const f=state.detailFrom; if(f==='list')go('li
 window.stepDetail=function(d){ const list=(state.detailFrom==='list')?filteredForList():typeLineups(); const i=list.findIndex(x=>x.id===state.detailId); let ni=i+d; if(ni<0)ni=list.length-1; if(ni>=list.length)ni=0; if(list[ni]){ state.detailId=list[ni].id; if(state.detailFrom==='map'){state.sel=ni;} renderDetail(); haptic('sel'); } };
 window.viewOnMap=function(id){ const l=LINEUPS.find(x=>x.id===id); state.map=l.map;state.side=l.side;state.type=l.type; const list=typeLineups(); state.sel=Math.max(0,list.findIndex(x=>x.id===id)); go('map',{tab:'map'}); };
 window.toggleSave=function(id){ const l=LINEUPS.find(x=>x.id===id); l.saved=!l.saved; persist(); if(SERVER_OK)api('/api/save',{id,on:l.saved}).catch(()=>{}); haptic(l.saved?'success':'soft'); const b=document.getElementById('saveBtn'); if(b){ b.style.background=l.saved?'var(--accent)':'var(--text)'; b.innerHTML=saveBtnInner(l);} if(state.view==='list')renderList(); toast(l.saved?'Сохранено в SAVED':'Удалено из SAVED'); };
+window.openShot=function(id,kind){ const l=LINEUPS.find(x=>x.id===id); if(!l)return; const ref=kind==='aim'?l.shotAim:l.shotStand; if(!ref)return; haptic('soft');
+  let ov=document.getElementById('shotOverlay'); if(!ov){ ov=document.createElement('div'); ov.id='shotOverlay'; ov.style.cssText='position:fixed;inset:0;z-index:200;background:rgba(6,7,8,.94);display:flex;align-items:center;justify-content:center;padding:20px'; ov.onclick=()=>{ ov.remove(); }; document.getElementById('app').appendChild(ov); }
+  ov.innerHTML=`<img src="${imgRefSrc(ref)}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:12px"><div style="position:absolute;top:calc(14px + var(--safe-top));right:16px;width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.8"><path d="M2 2l10 10M12 2 2 12"/></svg></div><div style="position:absolute;bottom:calc(18px + var(--safe-bot));left:0;right:0;text-align:center;font:600 10px/1 var(--mono);color:rgba(255,255,255,.6);letter-spacing:.08em">${kind==='aim'?'ПРИЦЕЛ':'ГДЕ ВСТАТЬ'} · ТАПНИ ЧТОБЫ ЗАКРЫТЬ</div>`;
+};
 window.shareLineup=function(id){ const l=LINEUPS.find(x=>x.id===id); haptic('soft'); const bot=CFG.botUsername||'lineups', app=CFG.appName; const link='https://t.me/'+bot+(app?'/'+app:'')+'?startapp='+id; if(TG&&TG.openTelegramLink){ try{ TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent('Раскидка: '+l.title)); return; }catch(e){} } toast('Ссылка на раскидку скопирована'); };
 window.deleteLineup=function(id){
   const doDel=()=>{ const after=()=>{ const i=LINEUPS.findIndex(x=>x.id===id); if(i>=0)LINEUPS.splice(i,1); haptic('soft'); toast('Раскидка удалена'); if(state.view==='detail')go('profile',{tab:'profile',profTab:'mine'}); else if(state.view==='profile')renderProfile(); else if(state.view==='list')renderList(); else if(state.view==='map')renderMap(); };
@@ -1225,11 +1237,13 @@ function renderCreate(){
         <span style="font:600 9px/1 var(--mono);color:var(--dim);letter-spacing:.1em">ВЕРТИКАЛЬНОЕ · ДО ${CFG.videoMaxMB||20} МБ</span>
       </div>`}
       <div class="eyebrow" style="margin-top:22px">СКРИНШОТЫ · НЕОБЯЗАТЕЛЬНО</div>
+      <input id="cShotStand" type="file" accept="image/*" style="display:none" onchange="onShotPick('stand',this)">
+      <input id="cShotAim" type="file" accept="image/*" style="display:none" onchange="onShotPick('aim',this)">
       <div style="display:flex;gap:10px;margin-top:11px">
-        <div style="flex:1;height:96px;border-radius:12px;background:#0F1011;border:1px solid var(--line2);position:relative"><span style="position:absolute;left:8px;top:8px;font:700 8px/1 var(--mono);color:var(--muted2);letter-spacing:.08em">1 · ВСТАТЬ</span></div>
-        <div style="flex:1;height:96px;border-radius:12px;background:#0F1011;border:1px solid var(--line2);position:relative"><span style="position:absolute;left:8px;top:8px;font:700 8px/1 var(--mono);color:var(--muted2);letter-spacing:.08em">2 · ПРИЦЕЛ</span></div>
+        ${shotBox('stand','1 · ВСТАТЬ',createShotStand)}
+        ${shotBox('aim','2 · ПРИЦЕЛ',createShotAim)}
       </div>
-      <p style="font:400 11.5px/1.5 var(--font);color:var(--muted2);margin-top:14px">Карта и зона определятся по видео — поправишь на следующем шаге.</p>
+      <p style="font:400 11.5px/1.5 var(--font);color:var(--muted2);margin-top:14px">Скрин, где ты стоишь, и скрин с прицелом — их увидят в разделе «Как бросить». Карта и зона определятся по видео — поправишь на следующем шаге.</p>
     </div>
     <div style="padding:12px 20px calc(14px + var(--safe-bot));flex:none"><button class="btn-primary press" onclick="createNext()">Дальше · точки на карте<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#0A0B0C" stroke-width="2">${IC.chevR}</svg></button></div>`;
   }
@@ -1263,7 +1277,7 @@ function renderCreate(){
   else { inner=`${head('Параметры','ВСЁ ГОТОВО')}
     <div class="scroll pad" style="padding-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)">
-        <div style="display:flex;align-items:center;gap:11px;min-width:0"><div style="width:40px;height:40px;border-radius:10px;background:#0F1011;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center">${createVideo?`<video src="${URL.createObjectURL(createVideo)}" muted playsinline style="width:100%;height:100%;object-fit:cover"></video>`:`<svg width="14" height="14" viewBox="0 0 16 16" fill="#FF6B35">${IC.play}</svg>`}</div><div style="min-width:0"><div style="font:600 11px/1 var(--font)">${createVideo?'Видео выбрано':'Без видео'} · ${MAPS[createMap].name}</div><div style="font:600 9px/1 var(--mono);color:var(--muted2);letter-spacing:.06em;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((createFromN||'Откуда').toUpperCase())} → ${esc((createToN||'Куда').toUpperCase())}</div></div></div>
+        <div style="display:flex;align-items:center;gap:11px;min-width:0"><div style="width:40px;height:40px;border-radius:10px;background:#0F1011;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center">${createVideo?`<video src="${URL.createObjectURL(createVideo)}" muted playsinline style="width:100%;height:100%;object-fit:cover"></video>`:`<svg width="14" height="14" viewBox="0 0 16 16" fill="#FF6B35">${IC.play}</svg>`}</div><div style="min-width:0"><div style="font:600 11px/1 var(--font)">${createVideo?'Видео выбрано':'Без видео'}${(createShotStand||createShotAim)?' · '+((createShotStand?1:0)+(createShotAim?1:0))+' скрин':''} · ${MAPS[createMap].name}</div><div style="font:600 9px/1 var(--mono);color:var(--muted2);letter-spacing:.06em;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((createFromN||'Откуда').toUpperCase())} → ${esc((createToN||'Куда').toUpperCase())}</div></div></div>
         <button class="press" onclick="state.createStep=0;renderCreate()" style="font:600 10px/1 var(--mono);color:var(--accent2);letter-spacing:.08em;flex:none">ИЗМЕНИТЬ</button>
       </div>
       <div class="eyebrow" style="margin-top:20px">НАЗВАНИЕ</div>
@@ -1292,9 +1306,25 @@ function renderCreate(){
   }
   stage.innerHTML=`<div class="view active">${inner}</div>`;
 }
-window.startCreate=function(){ createVideo=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; createDur='0:06'; go('create',{createStep:0}); };
+window.startCreate=function(){ createVideo=null; createShotStand=null; createShotAim=null; createMap='sandstone'; createFrom=null; createTo=null; createPlacing='from'; createFromN=''; createToN=''; createDur='0:06'; go('create',{createStep:0}); };
 window.setCreateMap=function(id){ if(createMap!==id){ createMap=id; createFrom=null; createTo=null; createPlacing='from'; } renderCreate(); haptic('sel'); };
 window.mapTap=function(e){ const el=document.getElementById('createMap'); if(!el)return; const r=el.getBoundingClientRect(); const px=(e.touches?e.touches[0].clientX:e.clientX), py=(e.touches?e.touches[0].clientY:e.clientY); const x=Math.max(8,Math.min(504,(px-r.left)/r.width*512)); const y=Math.max(8,Math.min(504,(py-r.top)/r.height*512)); if(createPlacing==='from'){ createFrom={x,y}; createPlacing='to'; } else { createTo={x,y}; } haptic('sel'); renderCreate(); };
+function shotBox(kind,label,file){
+  const inputId=kind==='stand'?'cShotStand':'cShotAim';
+  if(file){ const url=URL.createObjectURL(file);
+    return `<div class="press" onclick="document.getElementById('${inputId}').click()" style="flex:1;height:96px;border-radius:12px;overflow:hidden;position:relative;border:1px solid var(--line2);cursor:pointer">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover">
+      <span style="position:absolute;left:8px;top:8px;font:700 8px/1 var(--mono);color:#fff;letter-spacing:.08em;background:rgba(10,11,12,.6);padding:4px 6px;border-radius:6px">${label}</span>
+      <span style="position:absolute;right:8px;bottom:8px;font:600 8px/1 var(--mono);color:#fff;letter-spacing:.06em;background:rgba(10,11,12,.6);padding:4px 6px;border-radius:6px">ЗАМЕНИТЬ</span>
+    </div>`;
+  }
+  return `<div class="press" onclick="document.getElementById('${inputId}').click()" style="flex:1;height:96px;border-radius:12px;background:#0F1011;border:1.5px dashed rgba(255,255,255,.12);position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px">
+    <span style="position:absolute;left:8px;top:8px;font:700 8px/1 var(--mono);color:var(--muted2);letter-spacing:.08em">${label}</span>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#6B7278" stroke-width="1.5"><rect x="2.5" y="4" width="15" height="12" rx="2"/><circle cx="10" cy="10" r="3"/><path d="M6.5 4l1-1.5h5l1 1.5"/></svg>
+    <span style="font:600 8.5px/1 var(--mono);color:var(--dim);letter-spacing:.06em">ДОБАВИТЬ</span>
+  </div>`;
+}
+window.onShotPick=function(kind,input){ const f=input.files&&input.files[0]; if(!f)return; if(!/^image\//.test(f.type||'')){ toast('Нужна картинка'); input.value=''; return; } if(f.size>12*1024*1024){ toast('Картинка больше 12 МБ'); input.value=''; return; } if(kind==='stand')createShotStand=f; else createShotAim=f; haptic('sel'); renderCreate(); };
 window.onVideoPick=function(input){ const f=input.files&&input.files[0]; if(!f)return; const maxMB=(CFG.videoMaxMB||20); if(f.size>maxMB*1024*1024){ toast('Видео больше '+maxMB+' МБ'+(maxMB<=20?' — обрежь короче или снизь качество':'')); input.value=''; return; } createVideo=f; haptic('sel');
   try{ const uu=URL.createObjectURL(f); const v=document.createElement('video'); v.preload='metadata'; v.onloadedmetadata=function(){ if(v.duration&&isFinite(v.duration)){ const s=Math.min(99*60,Math.round(v.duration)); createDur=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); if(state.view==='create'&&state.createStep===2)renderCreate(); } URL.revokeObjectURL(uu); }; v.src=uu; }catch(e){}
   renderCreate(); };
@@ -1313,18 +1343,32 @@ window.publishLineup=function(){
   const dur=/^\d:\d\d$/.test(selChip('cDur'))?selChip('cDur'):(createDur||'0:06');
   const fromP={x:createFrom?createFrom.x:300,y:createFrom?createFrom.y:470,n:(createFromN.trim()||'Откуда')};
   const toP={x:createTo?createTo.x:120,y:createTo?createTo.y:140,n:(createToN.trim()||'Куда')};
-  const proceed=(videoId,videoUrl)=>{
-    const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||''};
-    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(ME&&!lin.authorId)lin.authorId=ME.id; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('profile',{tab:'profile',profTab:'mine'}),800); };
+  // локальные blob-превью для мгновенного показа в этой сессии
+  const standLocal=createShotStand?URL.createObjectURL(createShotStand):'';
+  const aimLocal=createShotAim?URL.createObjectURL(createShotAim):'';
+  const proceed=(videoId,videoUrl,shots)=>{
+    shots=shots||{};
+    const payload={map:createMap,side,type,zone,title:name,from:fromP,to:toP,thr,dur,diff,desc:dd,aim:toP.n,video:videoId||'',shotStand:shots.standRef||'',shotAim:shots.aimRef||''};
+    const finish=(lin,msg)=>{ lin.auth=0; lin.mine=true; if(ME&&!lin.authorId)lin.authorId=ME.id; if(videoUrl&&!lin.videoUrl)lin.videoUrl=videoUrl; if(standLocal)lin.shotStand=standLocal; if(aimLocal)lin.shotAim=aimLocal; if(!LINEUPS.find(x=>x.id===lin.id))LINEUPS.push(lin); haptic('success'); toast(msg||'Раскидка опубликована · видна на карте'); setTimeout(()=>go('profile',{tab:'profile',profTab:'mine'}),800); };
     const local=()=>{ const id='u'+Date.now(); const nl=L(id,createMap,side,type,zone,name,fromP.x,fromP.y,fromP.n,toP.x,toP.y,toP.n,thr,dur,diff,0); nl.desc=dd; nl.aim=toP.n; nl.authorName=displayName(); if(videoUrl)nl.videoUrl=videoUrl; finish(nl); };
     if(SERVER_OK){ api('/api/submit',{lineup:payload}).then(d=>{ if(d&&d.lineup)finish(d.lineup, d.lineup.pending?'Отправлено на модерацию':'Раскидка опубликована · видна на карте'); else local(); }).catch(local); }
     else local();
   };
+  // загрузка скриншотов (если есть и есть сервер) → ссылки для payload
+  const uploadShots=()=>{
+    const shots={standRef:'',aimRef:''};
+    if(!SERVER_OK)return Promise.resolve(shots);
+    const tasks=[];
+    if(createShotStand)tasks.push(uploadImage(createShotStand).then(r=>{shots.standRef=r||'';}).catch(()=>{}));
+    if(createShotAim)tasks.push(uploadImage(createShotAim).then(r=>{shots.aimRef=r||'';}).catch(()=>{}));
+    return tasks.length?Promise.all(tasks).then(()=>shots):Promise.resolve(shots);
+  };
+  const withVideo=(videoId,videoUrl)=>{ if(createShotStand||createShotAim){ toast('Загружаем скриншоты…'); uploadShots().then(shots=>proceed(videoId,videoUrl,shots)); } else proceed(videoId,videoUrl,{}); };
   if(createVideo){
     const localUrl=URL.createObjectURL(createVideo);
-    if(SERVER_OK){ toast('Загружаем видео…'); uploadVideo(createVideo).then(id=>proceed(id,localUrl)).catch(()=>{ toast('Видео не загрузилось — публикую без него'); proceed('',localUrl); }); }
-    else proceed('',localUrl);
-  } else proceed('','');
+    if(SERVER_OK){ toast('Загружаем видео…'); uploadVideo(createVideo).then(id=>withVideo(id,localUrl)).catch(()=>{ toast('Видео не загрузилось — публикую без него'); withVideo('',localUrl); }); }
+    else withVideo('',localUrl);
+  } else withVideo('','');
 };
 
 /* ===== navbar ===== */

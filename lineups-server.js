@@ -200,8 +200,17 @@ function cleanLineup(l) {
     diff: l.diff === 'advanced' ? 'advanced' : 'easy',
     desc: str(l.desc, 140),
     aim: str(l.aim, 60),
-    video: (typeof l.video === 'string' && (/^https:\/\/[\w./:?=&%~-]{10,300}$/.test(l.video) || /^[A-Za-z0-9_-]{10,220}$/.test(l.video))) ? l.video : ''
+    video: (typeof l.video === 'string' && (/^https:\/\/[\w./:?=&%~-]{10,300}$/.test(l.video) || /^[A-Za-z0-9_-]{10,220}$/.test(l.video))) ? l.video : '',
+    shotStand: cleanImgRef(l.shotStand),
+    shotAim: cleanImgRef(l.shotAim)
   };
+}
+// Ссылка на скриншот: либо публичный https-URL (S3), либо "tg:<file_id>" (Telegram-хранилище).
+function cleanImgRef(v) {
+  if (typeof v !== 'string') return '';
+  if (/^https:\/\/[\w./:?=&%~-]{10,300}$/.test(v)) return v;
+  if (/^tg:[A-Za-z0-9_-]{10,220}$/.test(v)) return v;
+  return '';
 }
 
 /* ----------------------------------------------------- telegram bot api (видео-хранилище) */
@@ -529,17 +538,21 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/upload' && req.method === 'POST') {
     const user = verifyInitData(req.headers['x-init-data']);
     if ((BOT_TOKEN || S3_ON) && !user) { json(res, 401, { error: 'auth' }); return; }
+    const reqCt = req.headers['content-type'] || '';
+    const isImage = /^image\//.test(reqCt);
     // --- S3-хранилище: стримим прямо в бакет (без лимита 20 МБ) ---
     if (S3_ON) {
       const cl = parseInt(req.headers['content-length'] || '0', 10);
-      if (cl > MAX_S3_BYTES) { json(res, 413, { error: 'too large' }); return; }
-      const key = 'videos/' + genId() + '.mp4';
-      const ct = req.headers['content-type'] || 'video/mp4';
+      const maxImg = 12 * 1024 * 1024;
+      if (cl > (isImage ? maxImg : MAX_S3_BYTES)) { json(res, 413, { error: 'too large' }); return; }
+      const ext = isImage ? (/png/.test(reqCt) ? '.png' : (/webp/.test(reqCt) ? '.webp' : '.jpg')) : '.mp4';
+      const key = (isImage ? 'shots/' : 'videos/') + genId() + ext;
+      const ct = reqCt || (isImage ? 'image/jpeg' : 'video/mp4');
       const opts = s3SignedPutHeaders(key, ct, req.headers['content-length']);
       const s3req = https.request({ hostname: opts.host, path: opts.path, method: 'PUT', headers: opts.headers }, s3res => {
         let body = ''; s3res.on('data', c => body += c);
         s3res.on('end', () => {
-          if (s3res.statusCode >= 200 && s3res.statusCode < 300) json(res, 200, { video: S3_PUBLIC_URL + '/' + key });
+          if (s3res.statusCode >= 200 && s3res.statusCode < 300) json(res, 200, isImage ? { image: S3_PUBLIC_URL + '/' + key } : { video: S3_PUBLIC_URL + '/' + key });
           else json(res, 502, { error: 's3 ' + s3res.statusCode, detail: body.slice(0, 200) });
         });
       });
@@ -548,17 +561,40 @@ const server = http.createServer(async (req, res) => {
       req.pipe(s3req);
       return;
     }
-    // --- Telegram fallback (≤20 МБ) ---
+    // --- Telegram fallback ---
     if (!BOT_TOKEN) { json(res, 503, { error: 'no storage' }); return; }
-    let buf; try { buf = await readBodyRaw(req, MAX_VIDEO_BYTES); } catch (e) { json(res, 413, { error: 'too large (max 20MB)' }); return; }
-    if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
     const chatId = STORAGE_CHAT_ID || (user && user.id);
     if (!chatId) { json(res, 500, { error: 'no storage chat' }); return; }
+    if (isImage) {
+      let ibuf; try { ibuf = await readBodyRaw(req, 12 * 1024 * 1024); } catch (e) { json(res, 413, { error: 'too large (max 12MB)' }); return; }
+      if (!ibuf.length) { json(res, 400, { error: 'empty' }); return; }
+      try {
+        const ifid = await tgSendPhoto(chatId, ibuf, reqCt);
+        if (!ifid) { json(res, 502, { error: 'send failed' }); return; }
+        json(res, 200, { image: 'tg:' + ifid });
+      } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+      return;
+    }
+    let buf; try { buf = await readBodyRaw(req, MAX_VIDEO_BYTES); } catch (e) { json(res, 413, { error: 'too large (max 20MB)' }); return; }
+    if (!buf.length) { json(res, 400, { error: 'empty' }); return; }
     try {
       const fid = await tgSendVideo(chatId, buf, req.headers['content-type']);
       if (!fid) { json(res, 502, { error: 'send failed' }); return; }
       json(res, 200, { video: fid });
     } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+    return;
+  }
+
+  // ---- отдача скриншота из Telegram (по file_id) ----
+  if (p === '/api/photo' && req.method === 'GET') {
+    const fid = u.searchParams.get('id') || '';
+    if (!BOT_TOKEN || !/^[A-Za-z0-9_-]{10,220}$/.test(fid)) { res.writeHead(404, { 'Access-Control-Allow-Origin': '*' }); res.end('no photo'); return; }
+    let gf; try { gf = await tgCall('getFile', { file_id: fid }); } catch (e) { gf = null; }
+    if (!gf || !gf.ok || !gf.result.file_path) { res.writeHead(404); res.end('no file'); return; }
+    https.get('https://api.telegram.org/file/bot' + BOT_TOKEN + '/' + gf.result.file_path, tr => {
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' });
+      tr.pipe(res);
+    }).on('error', () => { res.writeHead(502); res.end('upstream'); });
     return;
   }
 

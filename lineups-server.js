@@ -42,6 +42,7 @@ const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const PORT = process.env.PORT || process.argv[2] || 8080;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -157,14 +158,20 @@ function isAdmin(u) {
 
 /* ----------------------------------------------------- helpers */
 function json(res, code, obj) {
-  res.writeHead(code, {
+  const h = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, X-Init-Data',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Cache-Control': 'no-store'
-  });
-  res.end(JSON.stringify(obj));
+  };
+  const body = JSON.stringify(obj);
+  // gzip крупные ответы (community-раскидки бывают большими) — быстрее и экономит трафик
+  if (res._gz && Buffer.byteLength(body) > 600) {
+    try { const gz = zlib.gzipSync(body); h['Content-Encoding'] = 'gzip'; h['Vary'] = 'Accept-Encoding'; res.writeHead(code, h); res.end(gz); return; } catch (e) {}
+  }
+  res.writeHead(code, h);
+  res.end(body);
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -320,21 +327,30 @@ function subToLineup(rec, meId) {
 }
 
 /* ----------------------------------------------------- html serving */
+let _htmlCache = null; // { raw, gz } — собираем один раз на процесс
+function buildHtml() {
+  const html = fs.readFileSync(HTML_FILE, 'utf8');
+  const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: parseInt(process.env.VIDEO_MAX_MB || '0', 10) || (S3_ON ? 300 : 20) };
+  const inject = `\n<script>window.LINEUPS_CONFIG=${JSON.stringify(cfg)};</script>\n`;
+  const raw = html.includes('</head>') ? html.replace('</head>', inject + '</head>') : inject + html;
+  let gz = null; try { gz = zlib.gzipSync(raw); } catch (e) {}
+  return { raw, gz };
+}
 function serveHtml(res) {
-  fs.readFile(HTML_FILE, 'utf8', (err, html) => {
-    if (err) { res.writeHead(500); res.end('lineups.html not found next to server'); return; }
-    const cfg = { enabled: true, apiBase: '', botUsername: BOT_USERNAME, appName: APP_NAME, videoMaxMB: parseInt(process.env.VIDEO_MAX_MB || '0', 10) || (S3_ON ? 300 : 20) };
-    const inject = `\n<script>window.LINEUPS_CONFIG=${JSON.stringify(cfg)};</script>\n`;
-    const outHtml = html.includes('</head>') ? html.replace('</head>', inject + '</head>') : inject + html;
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(outHtml);
-  });
+  try { if (!_htmlCache) _htmlCache = buildHtml(); } catch (e) { res.writeHead(500); res.end('lineups.html not found next to server'); return; }
+  if (res._gz && _htmlCache.gz) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' });
+    res.end(_htmlCache.gz); return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(_htmlCache.raw);
 }
 
 /* ----------------------------------------------------- server */
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
   const p = u.pathname;
+  res._gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
 
   if (req.method === 'OPTIONS') { json(res, 204, {}); return; }
   if (p === '/health') { json(res, 200, { ok: true, users: Object.keys(db.users).length, subs: Object.keys(db.subs).length, kv: KV_ON }); return; }
